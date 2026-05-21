@@ -42,7 +42,7 @@
         margin: 0 auto;
         page-break-inside: avoid; /* 요소 내부에서 페이지가 나뉘는 것 방지 */
       }
-      /* A4 사이즈 여백 최적화 */
+      /* A4 사이즈 여백 최적화 (세로 가득 채우기 위해 여백 최소화) */
       @page { size: A4 portrait; margin: 10mm; }
     }
   </style>
@@ -72,7 +72,6 @@
     };
 
     const IS_DB_CONFIGURED = firebaseConfig.apiKey !== "여기에_API_KEY_입력";
-    const APP_ROOM_ID = 'school-bus-room-1'; // 여러 반을 운영할 경우 이 이름을 다르게 해서 여러 HTML을 만들 수 있습니다.
 
     let app, auth, db;
     if (IS_DB_CONFIGURED) {
@@ -173,6 +172,11 @@
       const [editColor, setEditColor] = useState('blue');
       const [showResetConfirm, setShowResetConfirm] = useState(false);
 
+      // 아이디, 비밀번호 기능을 통한 이어서 작성하기 (Room 관리)
+      const [loginId, setLoginId] = useState('');
+      const [loginPw, setLoginPw] = useState('');
+      const [activeRoomId, setActiveRoomId] = useState('school-bus-default-room');
+
       const inputRef = useRef(null);
       const [toastMsg, setToastMsg] = useState(null);
 
@@ -201,50 +205,77 @@
         return () => unsubscribe();
       }, []);
 
-      // 실시간 데이터 리스너
+      // DB 또는 로컬스토리지에서 데이터 불러오기
       useEffect(() => {
-        if (!user || !isDbEnabled) return;
+        if (isDbEnabled && user) {
+          // 실시간 DB 연동
+          const seatsRef = collection(db, 'bus_rooms', activeRoomId, 'seats');
+          const unsubSeats = onSnapshot(seatsRef, (snapshot) => {
+            const newPassengers = {};
+            snapshot.forEach(doc => {
+              newPassengers[doc.id] = doc.data();
+            });
+            setPassengers(newPassengers);
+          }, (err) => console.error(err));
 
-        const seatsRef = collection(db, 'bus_rooms', APP_ROOM_ID, 'seats');
-        const unsubSeats = onSnapshot(seatsRef, (snapshot) => {
-          const newPassengers = {};
-          snapshot.forEach(doc => {
-            newPassengers[doc.id] = doc.data();
-          });
-          setPassengers(newPassengers);
-        }, (err) => console.error(err));
+          const configRef = collection(db, 'bus_rooms', activeRoomId, 'config');
+          const unsubConfig = onSnapshot(configRef, (snapshot) => {
+            snapshot.forEach(doc => {
+              if (doc.id === 'main') setBusType(doc.data().type);
+            });
+          }, (err) => console.error(err));
 
-        const configRef = collection(db, 'bus_rooms', APP_ROOM_ID, 'config');
-        const unsubConfig = onSnapshot(configRef, (snapshot) => {
-          snapshot.forEach(doc => {
-            if (doc.id === 'main') setBusType(doc.data().type);
-          });
-        }, (err) => console.error(err));
+          return () => {
+            unsubSeats();
+            unsubConfig();
+          };
+        } else if (!isDbEnabled) {
+          // 오프라인(DB 미설정) 시 로컬스토리지에서 데이터 로드
+          const localData = localStorage.getItem('bus_app_v2_' + activeRoomId);
+          if (localData) {
+            try {
+              const parsed = JSON.parse(localData);
+              setPassengers(parsed.p || {});
+              setBusType(parsed.t || 45);
+            } catch(e) {
+              setPassengers({});
+              setBusType(45);
+            }
+          } else {
+            setPassengers({});
+            setBusType(45);
+          }
+        }
+      }, [user, isDbEnabled, activeRoomId]);
 
-        return () => {
-          unsubSeats();
-          unsubConfig();
-        };
-      }, [user, isDbEnabled]);
-
+      // 데이터 저장 및 갱신 공통 함수
       const saveSeatData = async (seatId, data) => {
         if (!isDbEnabled) {
-          setPassengers(prev => ({ ...prev, [seatId]: data }));
+          setPassengers(prev => {
+            const next = { ...prev, [seatId]: data };
+            localStorage.setItem('bus_app_v2_' + activeRoomId, JSON.stringify({ p: next, t: busType }));
+            return next;
+          });
           return;
         }
         try {
-          const docRef = doc(db, 'bus_rooms', APP_ROOM_ID, 'seats', String(seatId));
+          const docRef = doc(db, 'bus_rooms', activeRoomId, 'seats', String(seatId));
           await setDoc(docRef, data);
         } catch (e) { console.error(e); }
       };
 
       const deleteSeatData = async (seatId) => {
         if (!isDbEnabled) {
-          setPassengers(prev => { const n = {...prev}; delete n[seatId]; return n; });
+          setPassengers(prev => {
+            const next = { ...prev };
+            delete next[seatId];
+            localStorage.setItem('bus_app_v2_' + activeRoomId, JSON.stringify({ p: next, t: busType }));
+            return next;
+          });
           return;
         }
         try {
-          const docRef = doc(db, 'bus_rooms', APP_ROOM_ID, 'seats', String(seatId));
+          const docRef = doc(db, 'bus_rooms', activeRoomId, 'seats', String(seatId));
           await deleteDoc(docRef);
         } catch (e) { console.error(e); }
       };
@@ -252,12 +283,27 @@
       const saveBusType = async (type) => {
         if (!isDbEnabled) {
           setBusType(type);
+          localStorage.setItem('bus_app_v2_' + activeRoomId, JSON.stringify({ p: passengers, t: type }));
           return;
         }
         try {
-          const docRef = doc(db, 'bus_rooms', APP_ROOM_ID, 'config', 'main');
+          const docRef = doc(db, 'bus_rooms', activeRoomId, 'config', 'main');
           await setDoc(docRef, { type });
         } catch (e) { console.error(e); }
+      };
+
+      // --- 인터랙션 핸들러 ---
+      const handleLoginRoom = () => {
+        if (!loginId.trim()) {
+          setToastMsg('접속할 아이디를 입력해주세요.');
+          setTimeout(() => setToastMsg(null), 3000);
+          return;
+        }
+        // 아이디와 비밀번호 조합으로 고유 방 ID 생성
+        const newRoomId = `${loginId.trim()}_${loginPw.trim()}`;
+        setActiveRoomId(newRoomId);
+        setToastMsg(`[${loginId.trim()}] 배치도를 불러왔습니다.`);
+        setTimeout(() => setToastMsg(null), 3000);
       };
 
       const handleTypeChange = (e) => {
@@ -271,6 +317,7 @@
       const executeResetAll = () => {
         if (!isDbEnabled) {
           setPassengers({});
+          localStorage.setItem('bus_app_v2_' + activeRoomId, JSON.stringify({ p: {}, t: busType }));
         } else {
           Object.keys(passengers).forEach(key => deleteSeatData(key));
         }
@@ -306,28 +353,20 @@
         }
       };
 
-      // 깃허브 배포 환경에서는 브라우저 인쇄가 잘 작동합니다.
       const handlePrint = () => {
         window.print();
       };
 
-      // 이미지 다운로드 기능 (html2canvas)
       const handleDownloadImage = async () => {
         const printArea = document.getElementById('printable-area');
         if (!printArea) return;
-        
         try {
           setToastMsg('이미지를 생성 중입니다...');
-          const canvas = await window.html2canvas(printArea, {
-            scale: 2, 
-            backgroundColor: '#ffffff'
-          });
-          
+          const canvas = await window.html2canvas(printArea, { scale: 2, backgroundColor: '#ffffff' });
           const link = document.createElement('a');
           link.download = `버스_좌석배치도_${busType}인승.png`;
           link.href = canvas.toDataURL('image/png');
           link.click();
-          
           setToastMsg('이미지 저장이 완료되었습니다.');
           setTimeout(() => setToastMsg(null), 3000);
         } catch(e) {
@@ -359,10 +398,10 @@
       return (
         <div className="min-h-screen p-4 sm:p-8 relative">
           
-          {/* 오프라인 모드 경고창 */}
+          {/* 오프라인 모드 알림 */}
           {!IS_DB_CONFIGURED && (
             <div className="max-w-6xl mx-auto mb-4 bg-amber-50 text-amber-800 p-4 rounded-xl border border-amber-200 text-sm font-medium no-print">
-              ⚠️ <b>오프라인 모드:</b> 현재 입력한 내용은 내 컴퓨터에만 저장되며 새로고침 시 사라집니다. 여러 학생이 동시에 접속하려면 코드 상단의 <code>firebaseConfig</code>에 데이터베이스 설정값을 입력해야 합니다.
+              💡 <b>오프라인(로컬) 모드:</b> 현재 작성한 내용은 브라우저에 저장됩니다. 학급별로 아이디를 다르게 입력하여 개별 저장/불러오기가 가능합니다. (실시간 다중 접속을 원하시면 코드 상단에 Firebase 정보를 입력하세요)
             </div>
           )}
 
@@ -374,7 +413,7 @@
                   버스 좌석 배치도
                   {isDbEnabled && <span className="flex h-3 w-3 relative ml-2" title="실시간 동기화 중"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span></span>}
                 </h1>
-                <p className="text-slate-500 mt-1">좌석을 클릭하거나 우측 표에 입력하세요. {isDbEnabled && "실시간으로 공유됩니다."}</p>
+                <p className="text-slate-500 mt-1">좌석을 클릭하거나 우측 표에 입력하세요.</p>
               </div>
               
               <div className="flex flex-wrap items-center gap-3">
@@ -420,22 +459,22 @@
                 <div className="grid grid-cols-5 gap-3 print:gap-2 mb-8 print:mb-4 pb-6 print:pb-4 border-b-4 border-slate-100">
                   <div className="col-span-2 flex items-center justify-center p-3 sm:p-4 print:p-2 bg-slate-100 rounded-2xl border-2 border-slate-200 text-slate-700">
                     <SteeringWheelIcon />
-                    <span className="ml-2 font-bold text-sm sm:text-lg print:text-sm">운전 기사님</span>
+                    <span className="ml-2 font-bold text-sm sm:text-lg print:text-base">운전 기사님</span>
                   </div>
                   <div className="col-span-1 flex justify-center items-end pb-2">
                     <span className="text-slate-300 text-[10px] sm:text-xs font-bold tracking-widest">FRONT</span>
                   </div>
                   <div className="col-span-2 flex items-center justify-center p-3 sm:p-4 print:p-2 bg-amber-50 rounded-2xl border-2 border-dashed border-amber-300 text-amber-700 relative overflow-hidden">
                     <DoorIcon />
-                    <span className="ml-2 font-bold text-sm sm:text-lg print:text-sm">출입문</span>
+                    <span className="ml-2 font-bold text-sm sm:text-lg print:text-base">출입문</span>
                     <div className="absolute right-[-10px] bottom-[-10px] w-12 h-12 bg-amber-200 opacity-20 rounded-full"></div>
                   </div>
                 </div>
 
-                {/* 좌석 그리드 */}
-                <div className="flex flex-col gap-3 print:gap-1.5">
+                {/* 좌석 그리드 (인쇄 시 A4 세로 가득 차도록 높이 확장) */}
+                <div className="flex flex-col gap-3 print:gap-3">
                   {layout.map((row, rowIndex) => (
-                    <div key={`row-${rowIndex}`} className="grid grid-cols-5 gap-2 sm:gap-3 print:gap-1.5">
+                    <div key={`row-${rowIndex}`} className="grid grid-cols-5 gap-2 sm:gap-3 print:gap-3">
                       {row.map((cell, colIndex) => {
                         if (cell === null) return <div key={`aisle-${rowIndex}-${colIndex}`} className="flex items-center justify-center text-slate-200 font-bold text-[10px] sm:text-xs tracking-widest">{rowIndex % 3 === 1 && "통 로"}</div>;
 
@@ -448,16 +487,16 @@
                           <div
                             key={`seat-${seatId}`}
                             onClick={() => handleSeatClick(seatId)}
-                            // 인쇄 시(print:) 좌석 높이를 줄여서 1장에 모두 들어가도록 함 (h-12)
-                            className={`relative h-14 sm:h-20 print:h-12 rounded-t-2xl rounded-b-lg border-2 flex flex-col items-center justify-center cursor-pointer transition-all duration-200 ${isOccupied ? `${colorTheme.bg} ${colorTheme.border} shadow-sm print-bg-color` : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-blue-50'}`}
+                            // 웹에서는 기존 높이 유지, 인쇄(print) 시에는 세로 가득 차도록 높이 69px 할당
+                            className={`relative h-14 sm:h-20 print:h-[69px] rounded-t-2xl rounded-b-lg border-2 flex flex-col items-center justify-center cursor-pointer transition-all duration-200 ${isOccupied ? `${colorTheme.bg} ${colorTheme.border} shadow-sm print-bg-color` : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-blue-50'}`}
                           >
                             {isOccupied ? (
                               <>
-                                <span className={`absolute top-1 left-1.5 sm:top-1.5 sm:left-2 print:top-0.5 print:left-1.5 text-[9px] sm:text-[10px] print:text-[8px] font-extrabold opacity-60 ${colorTheme.text}`}>{seatId}</span>
-                                <span className={`font-bold text-xs sm:text-base md:text-lg print:text-sm truncate w-full text-center px-0.5 leading-tight ${colorTheme.text}`}>{passenger.name}</span>
+                                <span className={`absolute top-1 left-1.5 sm:top-1.5 sm:left-2 print:top-1 print:left-2 text-[9px] sm:text-[10px] print:text-[10px] font-extrabold opacity-60 ${colorTheme.text}`}>{seatId}</span>
+                                <span className={`font-bold text-xs sm:text-base md:text-lg print:text-base truncate w-full text-center px-0.5 leading-tight ${colorTheme.text}`}>{passenger.name}</span>
                               </>
                             ) : (
-                              <span className="font-bold text-slate-300 text-lg sm:text-xl print:text-base group-hover:text-blue-300 transition-colors">{seatId}</span>
+                              <span className="font-bold text-slate-300 text-lg sm:text-xl print:text-lg group-hover:text-blue-300 transition-colors">{seatId}</span>
                             )}
                           </div>
                         );
@@ -469,11 +508,47 @@
               </div>
             </div>
 
-            {/* 오른쪽: 사이드바 */}
+            {/* 오른쪽: 사이드바 및 불러오기 패널 */}
             <div className="w-full lg:w-96 bg-white rounded-3xl shadow-lg border border-slate-200 flex flex-col overflow-hidden no-print h-auto lg:h-[800px] shrink-0">
-              <div className="p-4 bg-slate-800 text-white font-bold flex justify-between items-center">
+              
+              {/* 저장/불러오기(접속) 패널 추가 */}
+              <div className="bg-slate-800 p-4 shrink-0">
+                <div className="flex justify-between items-center mb-3">
+                  <span className="text-white font-bold text-sm">저장 및 불러오기 (학급 접속)</span>
+                  {activeRoomId !== 'school-bus-default-room' && (
+                     <span className="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded border border-green-500/30">
+                       현재 접속: {loginId}
+                     </span>
+                  )}
+                </div>
+                <div className="flex gap-2 mb-2">
+                  <input 
+                    type="text" 
+                    value={loginId} 
+                    onChange={e => setLoginId(e.target.value)} 
+                    placeholder="아이디 (예: 1반, 수련회)" 
+                    className="flex-[3] px-3 py-2 text-sm rounded bg-slate-700 text-white placeholder-slate-400 border border-slate-600 focus:outline-none focus:border-blue-400" 
+                  />
+                  <input 
+                    type="password" 
+                    value={loginPw} 
+                    onChange={e => setLoginPw(e.target.value)} 
+                    placeholder="비번" 
+                    className="flex-[2] px-3 py-2 text-sm rounded bg-slate-700 text-white placeholder-slate-400 border border-slate-600 focus:outline-none focus:border-blue-400" 
+                    onKeyDown={(e) => e.key === 'Enter' && handleLoginRoom()} 
+                  />
+                </div>
+                <button 
+                  onClick={handleLoginRoom} 
+                  className="w-full bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold py-2 px-2 rounded-lg transition-colors whitespace-nowrap shadow-md shadow-blue-900/20"
+                >
+                  해당 아이디로 접속 / 이어하기
+                </button>
+              </div>
+
+              <div className="p-3 bg-slate-700 text-white font-bold flex justify-between items-center text-sm shrink-0">
                 <span>좌석 목록 (빠른 입력)</span>
-                <span className="text-xs bg-slate-700 px-2 py-1 rounded-md">{busType}석</span>
+                <span className="text-xs bg-slate-600 px-2 py-1 rounded-md">{busType}석</span>
               </div>
               
               <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50">
