@@ -487,8 +487,8 @@
                           <div
                             key={`seat-${seatId}`}
                             onClick={() => handleSeatClick(seatId)}
-                            // 웹에서는 기존 높이 유지, 인쇄(print) 시에는 세로 가득 차도록 높이 69px 할당
-                            className={`relative h-14 sm:h-20 print:h-[69px] rounded-t-2xl rounded-b-lg border-2 flex flex-col items-center justify-center cursor-pointer transition-all duration-200 ${isOccupied ? `${colorTheme.bg} ${colorTheme.border} shadow-sm print-bg-color` : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-blue-50'}`}
+                            // 웹에서는 기존 높이 유지, 인쇄(print) 시에는 세로 가득 차도록 높이 65px 할당
+                            className={`relative h-14 sm:h-20 print:h-[65px] rounded-t-2xl rounded-b-lg border-2 flex flex-col items-center justify-center cursor-pointer transition-all duration-200 ${isOccupied ? `${colorTheme.bg} ${colorTheme.border} shadow-sm print-bg-color` : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-blue-50'}`}
                           >
                             {isOccupied ? (
                               <>
