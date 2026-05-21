@@ -33,14 +33,17 @@
         background-color: white !important;
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
+        margin: 0;
       }
       .no-print { display: none !important; }
       #printable-area {
         width: 100% !important;
         max-width: 100% !important;
         margin: 0 auto;
+        page-break-inside: avoid; /* 요소 내부에서 페이지가 나뉘는 것 방지 */
       }
-      @page { size: A4 portrait; margin: 1.5cm; }
+      /* A4 사이즈 여백 최적화 */
+      @page { size: A4 portrait; margin: 10mm; }
     }
   </style>
 </head>
@@ -409,32 +412,32 @@
 
           <div className="max-w-6xl mx-auto flex flex-col lg:flex-row gap-8">
             
-            {/* 왼쪽: 버스 레이아웃 */}
+            {/* 왼쪽: 버스 레이아웃 (인쇄 시 이 영역만 1페이지에 맞춤) */}
             <div id="printable-area" className="flex-1 w-full max-w-3xl mx-auto pb-4">
-              <div className="bg-white border-[6px] border-slate-800 rounded-[3rem] p-6 sm:p-8 shadow-2xl relative">
+              <div className="bg-white border-[6px] border-slate-800 print:border-4 rounded-[3rem] p-6 sm:p-8 print:p-5 shadow-2xl print:shadow-none relative">
                 
                 {/* 전면부 */}
-                <div className="grid grid-cols-5 gap-3 mb-8 pb-6 border-b-4 border-slate-100">
-                  <div className="col-span-2 flex items-center justify-center p-3 sm:p-4 bg-slate-100 rounded-2xl border-2 border-slate-200 text-slate-700">
+                <div className="grid grid-cols-5 gap-3 print:gap-2 mb-8 print:mb-4 pb-6 print:pb-4 border-b-4 border-slate-100">
+                  <div className="col-span-2 flex items-center justify-center p-3 sm:p-4 print:p-2 bg-slate-100 rounded-2xl border-2 border-slate-200 text-slate-700">
                     <SteeringWheelIcon />
-                    <span className="ml-2 font-bold text-sm sm:text-lg">운전 기사님</span>
+                    <span className="ml-2 font-bold text-sm sm:text-lg print:text-sm">운전 기사님</span>
                   </div>
                   <div className="col-span-1 flex justify-center items-end pb-2">
-                    <span className="text-slate-300 text-xs font-bold tracking-widest">FRONT</span>
+                    <span className="text-slate-300 text-[10px] sm:text-xs font-bold tracking-widest">FRONT</span>
                   </div>
-                  <div className="col-span-2 flex items-center justify-center p-3 sm:p-4 bg-amber-50 rounded-2xl border-2 border-dashed border-amber-300 text-amber-700 relative overflow-hidden">
+                  <div className="col-span-2 flex items-center justify-center p-3 sm:p-4 print:p-2 bg-amber-50 rounded-2xl border-2 border-dashed border-amber-300 text-amber-700 relative overflow-hidden">
                     <DoorIcon />
-                    <span className="ml-2 font-bold text-sm sm:text-lg">출입문</span>
+                    <span className="ml-2 font-bold text-sm sm:text-lg print:text-sm">출입문</span>
                     <div className="absolute right-[-10px] bottom-[-10px] w-12 h-12 bg-amber-200 opacity-20 rounded-full"></div>
                   </div>
                 </div>
 
                 {/* 좌석 그리드 */}
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-3 print:gap-1.5">
                   {layout.map((row, rowIndex) => (
-                    <div key={`row-${rowIndex}`} className="grid grid-cols-5 gap-2 sm:gap-3">
+                    <div key={`row-${rowIndex}`} className="grid grid-cols-5 gap-2 sm:gap-3 print:gap-1.5">
                       {row.map((cell, colIndex) => {
-                        if (cell === null) return <div key={`aisle-${rowIndex}-${colIndex}`} className="flex items-center justify-center text-slate-200 font-bold text-xs tracking-widest">{rowIndex % 3 === 1 && "통 로"}</div>;
+                        if (cell === null) return <div key={`aisle-${rowIndex}-${colIndex}`} className="flex items-center justify-center text-slate-200 font-bold text-[10px] sm:text-xs tracking-widest">{rowIndex % 3 === 1 && "통 로"}</div>;
 
                         const seatId = cell.id;
                         const passenger = passengers[seatId];
@@ -445,15 +448,16 @@
                           <div
                             key={`seat-${seatId}`}
                             onClick={() => handleSeatClick(seatId)}
-                            className={`relative h-14 sm:h-20 rounded-t-2xl rounded-b-lg border-2 flex flex-col items-center justify-center cursor-pointer transition-all duration-200 ${isOccupied ? `${colorTheme.bg} ${colorTheme.border} shadow-sm print-bg-color` : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-blue-50'}`}
+                            // 인쇄 시(print:) 좌석 높이를 줄여서 1장에 모두 들어가도록 함 (h-12)
+                            className={`relative h-14 sm:h-20 print:h-12 rounded-t-2xl rounded-b-lg border-2 flex flex-col items-center justify-center cursor-pointer transition-all duration-200 ${isOccupied ? `${colorTheme.bg} ${colorTheme.border} shadow-sm print-bg-color` : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-blue-50'}`}
                           >
                             {isOccupied ? (
                               <>
-                                <span className={`absolute top-1 left-1.5 sm:top-1.5 sm:left-2 text-[9px] sm:text-[10px] font-extrabold opacity-60 ${colorTheme.text}`}>{seatId}</span>
-                                <span className={`font-bold text-xs sm:text-base md:text-lg truncate w-full text-center px-0.5 leading-tight ${colorTheme.text}`}>{passenger.name}</span>
+                                <span className={`absolute top-1 left-1.5 sm:top-1.5 sm:left-2 print:top-0.5 print:left-1.5 text-[9px] sm:text-[10px] print:text-[8px] font-extrabold opacity-60 ${colorTheme.text}`}>{seatId}</span>
+                                <span className={`font-bold text-xs sm:text-base md:text-lg print:text-sm truncate w-full text-center px-0.5 leading-tight ${colorTheme.text}`}>{passenger.name}</span>
                               </>
                             ) : (
-                              <span className="font-bold text-slate-300 text-lg sm:text-xl group-hover:text-blue-300 transition-colors">{seatId}</span>
+                              <span className="font-bold text-slate-300 text-lg sm:text-xl print:text-base group-hover:text-blue-300 transition-colors">{seatId}</span>
                             )}
                           </div>
                         );
@@ -461,7 +465,7 @@
                     </div>
                   ))}
                 </div>
-                <div className="mt-8 text-center text-slate-300 text-xs font-bold tracking-widest">BACK</div>
+                <div className="mt-8 text-center text-slate-300 text-[10px] sm:text-xs font-bold tracking-widest">BACK</div>
               </div>
             </div>
 
