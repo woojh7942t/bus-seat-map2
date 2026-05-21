@@ -62,18 +62,16 @@
     // 파이어베이스 프로젝트를 만들고 아래 값을 교체하세요.
     // 그대로 두면 '오프라인(개인) 모드'로 동작합니다.
     // ==========================================
-const firebaseConfig = {
-  apiKey: "AIzaSyALHR2xDrn0Tj85AYbRsKP2Rw3E5R3DBeU",
-  authDomain: "bus-seat-assignment.firebaseapp.com",
-  databaseURL: "https://bus-seat-assignment-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "bus-seat-assignment",
-  storageBucket: "bus-seat-assignment.firebasestorage.app",
-  messagingSenderId: "988860614564",
-  appId: "1:988860614564:web:626a226ee4966f3512a331",
-  measurementId: "G-X95LKL2PZ7"
-};
+    const firebaseConfig = {
+      apiKey: "여기에_API_KEY_입력",
+      authDomain: "여기에_PROJECT_ID.firebaseapp.com_입력",
+      projectId: "여기에_PROJECT_ID_입력",
+      storageBucket: "여기에_PROJECT_ID.appspot.com_입력",
+      messagingSenderId: "여기에_SENDER_ID_입력",
+      appId: "여기에_APP_ID_입력"
+    };
 
-    const IS_DB_CONFIGURED = firebaseConfig.apiKey !== "AIzaSyALHR2xDrn0Tj85AYbRsKP2Rw3E5R3DBeU";
+    const IS_DB_CONFIGURED = firebaseConfig.apiKey !== "여기에_API_KEY_입력";
 
     let app, auth, db;
     if (IS_DB_CONFIGURED) {
@@ -476,7 +474,7 @@ const firebaseConfig = {
                 {/* 좌석 그리드 (인쇄 시 A4 세로 가득 차도록 높이 확장) */}
                 <div className="flex flex-col gap-3 print:gap-3">
                   {layout.map((row, rowIndex) => (
-                    <div key={`row-${rowIndex}`} className="grid grid-cols-5 gap-2 sm:gap-3 print:gap-2">
+                    <div key={`row-${rowIndex}`} className="grid grid-cols-5 gap-2 sm:gap-3 print:gap-3">
                       {row.map((cell, colIndex) => {
                         if (cell === null) return <div key={`aisle-${rowIndex}-${colIndex}`} className="flex items-center justify-center text-slate-200 font-bold text-[10px] sm:text-xs tracking-widest">{rowIndex % 3 === 1 && "통 로"}</div>;
 
@@ -489,8 +487,8 @@ const firebaseConfig = {
                           <div
                             key={`seat-${seatId}`}
                             onClick={() => handleSeatClick(seatId)}
-                            // 웹에서는 기존 높이 유지, 인쇄(print) 시에는 세로 가득 차도록 높이 72px 할당
-                            className={`relative h-14 sm:h-20 print:h-[72px] rounded-t-2xl rounded-b-lg border-2 flex flex-col items-center justify-center cursor-pointer transition-all duration-200 ${isOccupied ? `${colorTheme.bg} ${colorTheme.border} shadow-sm print-bg-color` : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-blue-50'}`}
+                            // 웹에서는 기존 높이 유지, 인쇄(print) 시에는 세로 가득 차도록 높이 69px 할당
+                            className={`relative h-14 sm:h-20 print:h-[69px] rounded-t-2xl rounded-b-lg border-2 flex flex-col items-center justify-center cursor-pointer transition-all duration-200 ${isOccupied ? `${colorTheme.bg} ${colorTheme.border} shadow-sm print-bg-color` : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-blue-50'}`}
                           >
                             {isOccupied ? (
                               <>
