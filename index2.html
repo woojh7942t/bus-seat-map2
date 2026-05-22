@@ -1,9 +1,11 @@
+
+
 <!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>실시간 버스 좌석 배치도</title>
+  <title>실시간 버스 좌석 배치도 (구글시트 연동)</title>
   
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -11,15 +13,12 @@
   <!-- 이미지 저장 라이브러리 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   
-  <!-- Import Map for React & Firebase -->
+  <!-- Import Map for React -->
   <script type="importmap">
     {
       "imports": {
         "react": "https://esm.sh/react@18.2.0",
-        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
-        "firebase/app": "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js",
-        "firebase/auth": "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js",
-        "firebase/firestore": "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js"
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client"
       }
     }
   </script>
@@ -40,7 +39,7 @@
         width: 100% !important;
         max-width: 100% !important;
         margin: 0 auto;
-        page-break-inside: avoid; /* 요소 내부에서 페이지가 나뉘는 것 방지 */
+        page-break-inside: avoid;
       }
       /* A4 사이즈 여백 최적화 (세로 가득 채우기 위해 여백 최소화) */
       @page { size: A4 portrait; margin: 10mm; }
@@ -53,36 +52,14 @@
   <script type="text/babel" data-type="module">
     import React, { useState, useEffect, useRef } from 'react';
     import { createRoot } from 'react-dom/client';
-    import { initializeApp } from 'firebase/app';
-    import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-    import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
 
     // ==========================================
-    // [중요] Firebase 설정 (실시간 동시 접속을 원할 경우)
-    // 파이어베이스 프로젝트를 만들고 아래 값을 교체하세요.
-    // 그대로 두면 '오프라인(개인) 모드'로 동작합니다.
+    // [중요] 구글 시트 연동 설정 (앱스 스크립트 웹앱 URL)
+    // 아래 따옴표 안에 배포하신 구글 스크립트 URL을 붙여넣으세요.
     // ==========================================
-    const firebaseConfig = {
-      apiKey: "여기에_API_KEY_입력",
-      authDomain: "여기에_PROJECT_ID.firebaseapp.com_입력",
-      projectId: "여기에_PROJECT_ID_입력",
-      storageBucket: "여기에_PROJECT_ID.appspot.com_입력",
-      messagingSenderId: "여기에_SENDER_ID_입력",
-      appId: "여기에_APP_ID_입력"
-    };
-
-    const IS_DB_CONFIGURED = firebaseConfig.apiKey !== "여기에_API_KEY_입력";
-
-    let app, auth, db;
-    if (IS_DB_CONFIGURED) {
-      try {
-        app = initializeApp(firebaseConfig);
-        auth = getAuth(app);
-        db = getFirestore(app);
-      } catch(e) {
-        console.error("Firebase 초기화 에러:", e);
-      }
-    }
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwyQJpsgvHrNnPYfTAw0zFoZUF9NwmUhIb8SB4BRqlfnZiV7OFaO2vF1H1yf1NTWM5i/exec";
+    
+    const IS_DB_CONFIGURED = GOOGLE_SCRIPT_URL.startsWith("https://script.google.com");
 
     // --- 아이콘 컴포넌트 ---
     const SteeringWheelIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="2"/><line x1="12" y1="2" x2="12" y2="10"/><line x1="12" y1="14" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="10.59" y2="10.59"/><line x1="13.41" y1="13.41" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="22" y2="12"/></svg>;
@@ -162,8 +139,6 @@
     };
 
     function App() {
-      const [user, setUser] = useState(null);
-      const [isDbEnabled, setIsDbEnabled] = useState(false);
       const [busType, setBusType] = useState(45);
       const [passengers, setPassengers] = useState({});
       
@@ -172,124 +147,80 @@
       const [editColor, setEditColor] = useState('blue');
       const [showResetConfirm, setShowResetConfirm] = useState(false);
 
-      // 아이디, 비밀번호 기능을 통한 이어서 작성하기 (Room 관리)
       const [loginId, setLoginId] = useState('');
       const [loginPw, setLoginPw] = useState('');
       const [activeRoomId, setActiveRoomId] = useState('school-bus-default-room');
 
       const inputRef = useRef(null);
       const [toastMsg, setToastMsg] = useState(null);
+      const [isSyncing, setIsSyncing] = useState(false);
 
-      // Firebase 초기화 및 연동
-      useEffect(() => {
-        if (!IS_DB_CONFIGURED) {
-          setIsDbEnabled(false);
-          return;
-        }
-
-        const initAuth = async () => {
-          try {
-            await signInAnonymously(auth);
-          } catch(e) {
-            console.error("인증 실패:", e);
-            setIsDbEnabled(false);
-          }
-        };
-        
-        initAuth();
-        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-          setUser(currentUser);
-          if (currentUser) setIsDbEnabled(true);
-        });
-        
-        return () => unsubscribe();
-      }, []);
-
-      // DB 또는 로컬스토리지에서 데이터 불러오기
-      useEffect(() => {
-        if (isDbEnabled && user) {
-          // 실시간 DB 연동
-          const seatsRef = collection(db, 'bus_rooms', activeRoomId, 'seats');
-          const unsubSeats = onSnapshot(seatsRef, (snapshot) => {
-            const newPassengers = {};
-            snapshot.forEach(doc => {
-              newPassengers[doc.id] = doc.data();
-            });
-            setPassengers(newPassengers);
-          }, (err) => console.error(err));
-
-          const configRef = collection(db, 'bus_rooms', activeRoomId, 'config');
-          const unsubConfig = onSnapshot(configRef, (snapshot) => {
-            snapshot.forEach(doc => {
-              if (doc.id === 'main') setBusType(doc.data().type);
-            });
-          }, (err) => console.error(err));
-
-          return () => {
-            unsubSeats();
-            unsubConfig();
-          };
-        } else if (!isDbEnabled) {
-          // 오프라인(DB 미설정) 시 로컬스토리지에서 데이터 로드
-          const localData = localStorage.getItem('bus_app_v2_' + activeRoomId);
-          if (localData) {
-            try {
-              const parsed = JSON.parse(localData);
-              setPassengers(parsed.p || {});
-              setBusType(parsed.t || 45);
-            } catch(e) {
-              setPassengers({});
-              setBusType(45);
-            }
+      // 데이터 불러오기 로직 (구글 시트 API Polling)
+      const fetchFromSheet = async (roomId) => {
+        if (!IS_DB_CONFIGURED) return;
+        try {
+          const res = await fetch(`${GOOGLE_SCRIPT_URL}?roomId=${roomId}`);
+          const data = await res.json();
+          if (data && data.passengers) {
+            setPassengers(data.passengers);
+            if (data.busType) setBusType(data.busType);
           } else {
-            setPassengers({});
-            setBusType(45);
+            setPassengers({}); // 새 방인 경우 초기화
           }
+        } catch(e) {
+          console.error("데이터 불러오기 실패:", e);
         }
-      }, [user, isDbEnabled, activeRoomId]);
-
-      // 데이터 저장 및 갱신 공통 함수
-      const saveSeatData = async (seatId, data) => {
-        if (!isDbEnabled) {
-          setPassengers(prev => {
-            const next = { ...prev, [seatId]: data };
-            localStorage.setItem('bus_app_v2_' + activeRoomId, JSON.stringify({ p: next, t: busType }));
-            return next;
-          });
-          return;
-        }
-        try {
-          const docRef = doc(db, 'bus_rooms', activeRoomId, 'seats', String(seatId));
-          await setDoc(docRef, data);
-        } catch (e) { console.error(e); }
       };
 
-      const deleteSeatData = async (seatId) => {
-        if (!isDbEnabled) {
-          setPassengers(prev => {
-            const next = { ...prev };
-            delete next[seatId];
-            localStorage.setItem('bus_app_v2_' + activeRoomId, JSON.stringify({ p: next, t: busType }));
-            return next;
-          });
-          return;
-        }
+      // 구글 시트로 데이터 전송하기
+      const syncToSheet = async (newPassengers, newBusType, roomId) => {
+        if (!IS_DB_CONFIGURED) return;
+        setIsSyncing(true);
         try {
-          const docRef = doc(db, 'bus_rooms', activeRoomId, 'seats', String(seatId));
-          await deleteDoc(docRef);
-        } catch (e) { console.error(e); }
+          await fetch(GOOGLE_SCRIPT_URL, {
+            method: 'POST',
+            redirect: 'follow',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+              roomId: roomId,
+              payload: { busType: newBusType, passengers: newPassengers }
+            })
+          });
+        } catch(e) {
+          console.error("데이터 저장 실패:", e);
+        } finally {
+          setIsSyncing(false);
+        }
       };
 
-      const saveBusType = async (type) => {
-        if (!isDbEnabled) {
-          setBusType(type);
-          localStorage.setItem('bus_app_v2_' + activeRoomId, JSON.stringify({ p: passengers, t: type }));
-          return;
+      // 초기 렌더링 및 5초 주기 자동 갱신 (실시간 효과)
+      useEffect(() => {
+        // 로컬 스토리지 데이터 우선 로드
+        const localData = localStorage.getItem('bus_app_v2_' + activeRoomId);
+        if (localData) {
+          try {
+            const parsed = JSON.parse(localData);
+            setPassengers(parsed.p || {});
+            setBusType(parsed.t || 45);
+          } catch(e) {}
+        } else {
+          setPassengers({});
+          setBusType(45);
         }
-        try {
-          const docRef = doc(db, 'bus_rooms', activeRoomId, 'config', 'main');
-          await setDoc(docRef, { type });
-        } catch (e) { console.error(e); }
+
+        if (IS_DB_CONFIGURED) {
+          fetchFromSheet(activeRoomId); // 즉시 1회 불러오기
+          const interval = setInterval(() => fetchFromSheet(activeRoomId), 5000); // 5초마다 갱신
+          return () => clearInterval(interval);
+        }
+      }, [activeRoomId]);
+
+      // --- 상태 저장 통합 함수 ---
+      const updateData = (newPassengers, newBusType) => {
+        setPassengers(newPassengers);
+        setBusType(newBusType);
+        localStorage.setItem('bus_app_v2_' + activeRoomId, JSON.stringify({ p: newPassengers, t: newBusType }));
+        syncToSheet(newPassengers, newBusType, activeRoomId);
       };
 
       // --- 인터랙션 핸들러 ---
@@ -299,28 +230,34 @@
           setTimeout(() => setToastMsg(null), 3000);
           return;
         }
-        // 아이디와 비밀번호 조합으로 고유 방 ID 생성
         const newRoomId = `${loginId.trim()}_${loginPw.trim()}`;
         setActiveRoomId(newRoomId);
-        setToastMsg(`[${loginId.trim()}] 배치도를 불러왔습니다.`);
+        setToastMsg(`[${loginId.trim()}] 데이터에 접속 중입니다...`);
         setTimeout(() => setToastMsg(null), 3000);
+      };
+
+      const saveSeatData = (seatId, data) => {
+        const next = { ...passengers, [seatId]: data };
+        updateData(next, busType);
+      };
+
+      const deleteSeatData = (seatId) => {
+        const next = { ...passengers };
+        delete next[seatId];
+        updateData(next, busType);
       };
 
       const handleTypeChange = (e) => {
         const newType = parseInt(e.target.value);
-        saveBusType(newType);
-        Object.keys(passengers).forEach(key => {
-          if (parseInt(key) > newType) deleteSeatData(key);
+        let nextPassengers = { ...passengers };
+        Object.keys(nextPassengers).forEach(key => {
+          if (parseInt(key) > newType) delete nextPassengers[key];
         });
+        updateData(nextPassengers, newType);
       };
 
       const executeResetAll = () => {
-        if (!isDbEnabled) {
-          setPassengers({});
-          localStorage.setItem('bus_app_v2_' + activeRoomId, JSON.stringify({ p: {}, t: busType }));
-        } else {
-          Object.keys(passengers).forEach(key => deleteSeatData(key));
-        }
+        updateData({}, busType);
         setShowResetConfirm(false);
       };
 
@@ -348,14 +285,10 @@
 
       const handleTableColorChange = (seatId, newColor) => {
         const existing = passengers[seatId];
-        if (existing) {
-          saveSeatData(seatId, { ...existing, color: newColor });
-        }
+        if (existing) saveSeatData(seatId, { ...existing, color: newColor });
       };
 
-      const handlePrint = () => {
-        window.print();
-      };
+      const handlePrint = () => { window.print(); };
 
       const handleDownloadImage = async () => {
         const printArea = document.getElementById('printable-area');
@@ -370,7 +303,6 @@
           setToastMsg('이미지 저장이 완료되었습니다.');
           setTimeout(() => setToastMsg(null), 3000);
         } catch(e) {
-          console.error("이미지 저장 에러:", e);
           setToastMsg('이미지 생성에 실패했습니다.');
           setTimeout(() => setToastMsg(null), 3000);
         }
@@ -398,10 +330,9 @@
       return (
         <div className="min-h-screen p-4 sm:p-8 relative">
           
-          {/* 오프라인 모드 알림 */}
           {!IS_DB_CONFIGURED && (
             <div className="max-w-6xl mx-auto mb-4 bg-amber-50 text-amber-800 p-4 rounded-xl border border-amber-200 text-sm font-medium no-print">
-              💡 <b>오프라인(로컬) 모드:</b> 현재 작성한 내용은 브라우저에 저장됩니다. 학급별로 아이디를 다르게 입력하여 개별 저장/불러오기가 가능합니다. (실시간 다중 접속을 원하시면 코드 상단에 Firebase 정보를 입력하세요)
+              💡 <b>현재 오프라인 모드입니다.</b> 입력한 내용은 내 브라우저에만 저장됩니다. 실시간으로 여러 기기에서 동시 입력을 받으려면 구글 시트를 연동하세요!
             </div>
           )}
 
@@ -411,18 +342,14 @@
               <div>
                 <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
                   버스 좌석 배치도
-                  {isDbEnabled && <span className="flex h-3 w-3 relative ml-2" title="실시간 동기화 중"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span></span>}
+                  {IS_DB_CONFIGURED && <span className={`flex h-3 w-3 relative ml-2 ${isSyncing ? 'opacity-100' : 'opacity-50'}`} title="구글시트 연동 중"><span className={`${isSyncing ? 'animate-ping' : ''} absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75`}></span><span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span></span>}
                 </h1>
                 <p className="text-slate-500 mt-1">좌석을 클릭하거나 우측 표에 입력하세요.</p>
               </div>
               
               <div className="flex flex-wrap items-center gap-3">
                 <div className="bg-slate-100 p-1.5 rounded-lg border border-slate-200 flex items-center">
-                  <select 
-                    value={busType} 
-                    onChange={handleTypeChange}
-                    className="bg-transparent border-none text-slate-800 font-semibold focus:ring-0 cursor-pointer pl-2 pr-6 outline-none"
-                  >
+                  <select value={busType} onChange={handleTypeChange} className="bg-transparent border-none text-slate-800 font-semibold focus:ring-0 cursor-pointer pl-2 pr-6 outline-none">
                     <option value={45}>45인승 대형버스</option>
                     <option value={44}>44인승 대형버스</option>
                     <option value={41}>41인승 대형버스</option>
@@ -430,15 +357,9 @@
                   </select>
                 </div>
                 
-                <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors font-medium shadow-sm">
-                  <PrintIcon /><span>인쇄</span>
-                </button>
-                <button onClick={handleDownloadImage} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-200 transition-colors font-medium shadow-sm">
-                  <DownloadIcon /><span>이미지</span>
-                </button>
-                <button onClick={() => setShowResetConfirm(true)} className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-lg border border-red-200 hover:bg-red-100 transition-colors font-medium">
-                  <TrashIcon /><span className="hidden sm:inline">전체 초기화</span>
-                </button>
+                <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors font-medium shadow-sm"><PrintIcon /><span>인쇄</span></button>
+                <button onClick={handleDownloadImage} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-200 transition-colors font-medium shadow-sm"><DownloadIcon /><span>이미지</span></button>
+                <button onClick={() => setShowResetConfirm(true)} className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-lg border border-red-200 hover:bg-red-100 transition-colors font-medium"><TrashIcon /><span className="hidden sm:inline">전체 초기화</span></button>
               </div>
             </div>
             
@@ -451,11 +372,10 @@
 
           <div className="max-w-6xl mx-auto flex flex-col lg:flex-row gap-8">
             
-            {/* 왼쪽: 버스 레이아웃 (인쇄 시 이 영역만 1페이지에 맞춤) */}
+            {/* 왼쪽: 버스 레이아웃 */}
             <div id="printable-area" className="flex-1 w-full max-w-3xl mx-auto pb-4">
               <div className="bg-white border-[6px] border-slate-800 print:border-4 rounded-[3rem] p-6 sm:p-8 print:p-5 shadow-2xl print:shadow-none relative">
                 
-                {/* 전면부 */}
                 <div className="grid grid-cols-5 gap-3 print:gap-2 mb-8 print:mb-4 pb-6 print:pb-4 border-b-4 border-slate-100">
                   <div className="col-span-2 flex items-center justify-center p-3 sm:p-4 print:p-2 bg-slate-100 rounded-2xl border-2 border-slate-200 text-slate-700">
                     <SteeringWheelIcon />
@@ -471,7 +391,6 @@
                   </div>
                 </div>
 
-                {/* 좌석 그리드 (인쇄 시 A4 세로 가득 차도록 높이 확장) */}
                 <div className="flex flex-col gap-3 print:gap-3">
                   {layout.map((row, rowIndex) => (
                     <div key={`row-${rowIndex}`} className="grid grid-cols-5 gap-2 sm:gap-3 print:gap-3">
@@ -487,7 +406,6 @@
                           <div
                             key={`seat-${seatId}`}
                             onClick={() => handleSeatClick(seatId)}
-                            // 웹에서는 기존 높이 유지, 인쇄(print) 시에는 세로 가득 차도록 높이 65px 할당
                             className={`relative h-14 sm:h-20 print:h-[65px] rounded-t-2xl rounded-b-lg border-2 flex flex-col items-center justify-center cursor-pointer transition-all duration-200 ${isOccupied ? `${colorTheme.bg} ${colorTheme.border} shadow-sm print-bg-color` : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-blue-50'}`}
                           >
                             {isOccupied ? (
@@ -511,7 +429,6 @@
             {/* 오른쪽: 사이드바 및 불러오기 패널 */}
             <div className="w-full lg:w-96 bg-white rounded-3xl shadow-lg border border-slate-200 flex flex-col overflow-hidden no-print h-auto lg:h-[800px] shrink-0">
               
-              {/* 저장/불러오기(접속) 패널 추가 */}
               <div className="bg-slate-800 p-4 shrink-0">
                 <div className="flex justify-between items-center mb-3">
                   <span className="text-white font-bold text-sm">저장 및 불러오기 (학급 접속)</span>
@@ -522,26 +439,10 @@
                   )}
                 </div>
                 <div className="flex gap-2 mb-2">
-                  <input 
-                    type="text" 
-                    value={loginId} 
-                    onChange={e => setLoginId(e.target.value)} 
-                    placeholder="아이디 (예: 1반, 수련회)" 
-                    className="flex-[3] px-3 py-2 text-sm rounded bg-slate-700 text-white placeholder-slate-400 border border-slate-600 focus:outline-none focus:border-blue-400" 
-                  />
-                  <input 
-                    type="password" 
-                    value={loginPw} 
-                    onChange={e => setLoginPw(e.target.value)} 
-                    placeholder="비번" 
-                    className="flex-[2] px-3 py-2 text-sm rounded bg-slate-700 text-white placeholder-slate-400 border border-slate-600 focus:outline-none focus:border-blue-400" 
-                    onKeyDown={(e) => e.key === 'Enter' && handleLoginRoom()} 
-                  />
+                  <input type="text" value={loginId} onChange={e => setLoginId(e.target.value)} placeholder="아이디 (예: 1반, 수련회)" className="flex-[3] px-3 py-2 text-sm rounded bg-slate-700 text-white placeholder-slate-400 border border-slate-600 focus:outline-none focus:border-blue-400" />
+                  <input type="password" value={loginPw} onChange={e => setLoginPw(e.target.value)} placeholder="비번" className="flex-[2] px-3 py-2 text-sm rounded bg-slate-700 text-white placeholder-slate-400 border border-slate-600 focus:outline-none focus:border-blue-400" onKeyDown={(e) => e.key === 'Enter' && handleLoginRoom()} />
                 </div>
-                <button 
-                  onClick={handleLoginRoom} 
-                  className="w-full bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold py-2 px-2 rounded-lg transition-colors whitespace-nowrap shadow-md shadow-blue-900/20"
-                >
+                <button onClick={handleLoginRoom} className="w-full bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold py-2 px-2 rounded-lg transition-colors whitespace-nowrap shadow-md shadow-blue-900/20">
                   해당 아이디로 접속 / 이어하기
                 </button>
               </div>
@@ -553,53 +454,31 @@
               
               <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50">
                 {Array.from({ length: busType }, (_, i) => i + 1).map(seatId => (
-                  <SeatRow 
-                    key={`list-${seatId}`}
-                    seatId={seatId}
-                    passenger={passengers[seatId]}
-                    isOccupied={!!passengers[seatId]}
-                    onUpdate={saveSeatData}
-                    onDelete={deleteSeatData}
-                    onColorChange={handleTableColorChange}
-                  />
+                  <SeatRow key={`list-${seatId}`} seatId={seatId} passenger={passengers[seatId]} isOccupied={!!passengers[seatId]} onUpdate={saveSeatData} onDelete={deleteSeatData} onColorChange={handleTableColorChange} />
                 ))}
               </div>
             </div>
           </div>
 
-          {/* 좌석 모달 */}
+          {/* 모달 등 팝업 영역 (생략 없이 유지) */}
           {editingSeat && (
             <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[50] p-4 no-print" onClick={() => setEditingSeat(null)}>
               <div className="bg-white rounded-3xl p-6 sm:p-8 w-full max-w-sm shadow-2xl transform transition-all" onClick={e => e.stopPropagation()}>
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="text-2xl font-bold text-slate-800"><span className="text-blue-600">{editingSeat}</span>번 좌석</h3>
-                  <button onClick={() => setEditingSeat(null)} className="text-slate-400 hover:text-slate-700 bg-slate-100 rounded-full p-2">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                  </button>
+                  <button onClick={() => setEditingSeat(null)} className="text-slate-400 hover:text-slate-700 bg-slate-100 rounded-full p-2"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
                 </div>
                 
                 <div className="mb-6">
                   <label className="block text-sm font-semibold text-slate-600 mb-2">탑승자 이름 / 소속</label>
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    onKeyDown={handleModalKeyDown}
-                    placeholder="이름을 입력하세요"
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white text-lg font-medium transition-colors"
-                  />
+                  <input ref={inputRef} type="text" value={editName} onChange={(e) => setEditName(e.target.value)} onKeyDown={handleModalKeyDown} placeholder="이름을 입력하세요" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white text-lg font-medium transition-colors"/>
                 </div>
 
                 <div className="mb-8">
                   <label className="block text-sm font-semibold text-slate-600 mb-3">그룹 색상 지정</label>
                   <div className="flex gap-2 flex-wrap">
                     {SEAT_COLORS.map(color => (
-                      <button
-                        key={color.id}
-                        onClick={() => setEditColor(color.id)}
-                        className={`w-10 h-10 rounded-full border-2 flex items-center justify-center transition-transform ${color.bg} ${color.border} ${editColor === color.id ? 'scale-110 ring-2 ring-offset-2 ring-slate-400' : 'hover:scale-105 opacity-70 hover:opacity-100'}`}
-                      >
+                      <button key={color.id} onClick={() => setEditColor(color.id)} className={`w-10 h-10 rounded-full border-2 flex items-center justify-center transition-transform ${color.bg} ${color.border} ${editColor === color.id ? 'scale-110 ring-2 ring-offset-2 ring-slate-400' : 'hover:scale-105 opacity-70 hover:opacity-100'}`}>
                         {editColor === color.id && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className={color.text}><polyline points="20 6 9 17 4 12"></polyline></svg>}
                       </button>
                     ))}
@@ -614,18 +493,12 @@
             </div>
           )}
 
-          {/* 초기화 모달 */}
           {showResetConfirm && (
             <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4 no-print" onClick={() => setShowResetConfirm(false)}>
               <div className="bg-white rounded-3xl p-6 sm:p-8 w-full max-w-sm shadow-2xl transform transition-all" onClick={e => e.stopPropagation()}>
-                <div className="flex justify-center mb-4 text-red-500">
-                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                </div>
+                <div className="flex justify-center mb-4 text-red-500"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
                 <h3 className="text-xl font-bold text-slate-800 text-center mb-2">전체 초기화</h3>
-                <p className="text-slate-600 text-center mb-6">
-                  모든 좌석 배치를 초기화하시겠습니까?<br/>
-                  {isDbEnabled && <span className="text-red-500 font-semibold text-sm">※ 다른 학생들의 화면에서도 즉시 삭제됩니다.</span>}
-                </p>
+                <p className="text-slate-600 text-center mb-6">모든 좌석 배치를 초기화하시겠습니까?<br/>{IS_DB_CONFIGURED && <span className="text-red-500 font-semibold text-sm">※ 다른 학생들의 화면과 구글 시트에서도 삭제됩니다.</span>}</p>
                 <div className="flex gap-3">
                   <button onClick={() => setShowResetConfirm(false)} className="flex-1 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition-colors">취소</button>
                   <button onClick={executeResetAll} className="flex-1 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-colors">초기화 진행</button>
@@ -634,7 +507,6 @@
             </div>
           )}
 
-          {/* 토스트 */}
           {toastMsg && (
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-6 py-3 rounded-full shadow-xl z-[70] text-sm flex items-center gap-2 animate-bounce no-print">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
