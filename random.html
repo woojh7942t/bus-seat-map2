@@ -1,1 +1,794 @@
-test
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>실시간 버스 좌석 배치도</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- 이미지 저장 라이브러리 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  
+  <!-- 웹 폰트 추가 -->
+  <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  
+  <!-- Import Map for React & Firebase -->
+  <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "firebase/app": "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js",
+        "firebase/auth": "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js",
+        "firebase/firestore": "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js"
+      }
+    }
+  </script>
+
+  <!-- Babel for JSX compilation -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    body {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', sans-serif !important;
+    }
+    @media print {
+      body {
+        background-color: white !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      .no-print { display: none !important; }
+      #printable-area {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      .bus-container {
+        border-width: 4px !important;
+        border-radius: 2rem !important;
+        padding: 16px !important;
+        box-shadow: none !important;
+      }
+      @page { 
+        size: A4 portrait; 
+        margin: 6mm 10mm 6mm 10mm; 
+      }
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans">
+  <div id="root"></div>
+
+  <script type="text/babel" data-type="module">
+    import React, { useState, useEffect, useRef } from 'react';
+    import { createRoot } from 'react-dom/client';
+    import { initializeApp } from 'firebase/app';
+    import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+    import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
+
+    // ==========================================
+    // [중요] Firebase 설정
+    // ==========================================
+    const firebaseConfig = {
+      apiKey: "여기에_API_KEY_입력",
+      authDomain: "여기에_PROJECT_ID.firebaseapp.com_입력",
+      projectId: "여기에_PROJECT_ID_입력",
+      storageBucket: "여기에_PROJECT_ID.appspot.com_입력",
+      messagingSenderId: "여기에_SENDER_ID_입력",
+      appId: "여기에_APP_ID_입력"
+    };
+
+    const IS_DB_CONFIGURED = firebaseConfig.apiKey !== "여기에_API_KEY_입력";
+    let app, auth, db;
+    if (IS_DB_CONFIGURED) {
+      try {
+        app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
+      } catch(e) {
+        console.error("Firebase 초기화 에러:", e);
+      }
+    }
+
+    // --- 아이콘 컴포넌트 ---
+    const SteeringWheelIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="2"/><line x1="12" y1="2" x2="12" y2="10"/><line x1="12" y1="14" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="10.59" y2="10.59"/><line x1="13.41" y1="13.41" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="22" y2="12"/></svg>;
+    const DoorIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 20V6a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v14"/><path d="M2 20h20"/><path d="M14 12v.01"/></svg>;
+    const PrintIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>;
+    const DownloadIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>;
+    const TrashIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>;
+    const ShuffleIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>;
+    const LockIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M17 11V7A5 5 0 0 0 7 7v4H5v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V11h-2zm-5 6a2 2 0 1 1 2-2 2 2 0 0 1-2 2zM9 11V7a3 3 0 0 1 6 0v4H9z"/></svg>;
+    const UnlockIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>;
+
+    const SEAT_COLORS = [
+      { id: 'blue', label: '파랑', bg: 'bg-blue-100', border: 'border-blue-400', text: 'text-blue-800' },
+      { id: 'pink', label: '분홍', bg: 'bg-pink-100', border: 'border-pink-400', text: 'text-pink-800' },
+      { id: 'green', label: '초록', bg: 'bg-green-100', border: 'border-green-400', text: 'text-green-800' },
+      { id: 'orange', label: '주황', bg: 'bg-orange-100', border: 'border-orange-400', text: 'text-orange-800' },
+      { id: 'purple', label: '보라', bg: 'bg-purple-100', border: 'border-purple-400', text: 'text-purple-800' },
+      { id: 'gray', label: '기본', bg: 'bg-gray-200', border: 'border-gray-500', text: 'text-gray-800' },
+    ];
+
+    // --- 사이드바 입력 컴포넌트 ---
+    const SeatRow = ({ seatId, passenger, onUpdate, onDelete, onColorChange }) => {
+      const isOccupied = !!passenger?.name;
+      const isLocked = !!passenger?.isLocked;
+      const [localName, setLocalName] = useState(passenger?.name || '');
+
+      useEffect(() => {
+        setLocalName(passenger?.name || '');
+      }, [passenger?.name]);
+
+      const handleBlur = () => {
+        if (localName.trim() === '') {
+          if (isLocked) {
+            onUpdate(seatId, { ...passenger, name: '' });
+          } else if (passenger) {
+            onDelete(seatId);
+          }
+        } else {
+          if (localName !== passenger?.name) {
+            onUpdate(seatId, { ...passenger, name: localName, color: passenger?.color || 'blue' });
+          }
+        }
+      };
+
+      const handleKeyDown = (e) => {
+        if (e.key === 'Enter') e.target.blur();
+      };
+
+      const handleLockToggle = () => {
+        if (isLocked) {
+          if (localName.trim() === '') onDelete(seatId);
+          else onUpdate(seatId, { ...passenger, isLocked: false });
+        } else {
+          onUpdate(seatId, { name: localName, color: passenger?.color || 'blue', isLocked: true });
+        }
+      };
+
+      return (
+        <div className={`flex items-center gap-2 p-2 bg-white rounded-xl shadow-sm border transition-colors ${isLocked ? 'border-amber-400 bg-amber-50/40' : 'border-slate-100 hover:border-blue-200'}`}>
+          <div className={`w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg font-bold text-sm transition-colors ${
+            isOccupied 
+              ? `${SEAT_COLORS.find(c => c.id === passenger?.color)?.bg} ${SEAT_COLORS.find(c => c.id === passenger?.color)?.text}` 
+              : (isLocked ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-400')
+          }`}>
+            {seatId}
+          </div>
+          
+          <input
+            type="text"
+            value={localName}
+            onChange={(e) => setLocalName(e.target.value)}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+            placeholder="번호/이름 입력"
+            className={`flex-1 min-w-0 px-2 py-1.5 text-sm bg-transparent border-b focus:outline-none transition-colors ${
+              isLocked ? 'border-amber-200 focus:border-amber-500 font-semibold' : 'border-slate-200 focus:border-blue-500'
+            }`}
+          />
+
+          <button 
+            onClick={handleLockToggle} 
+            title={isLocked ? "고정 해제" : "지정석으로 고정"} 
+            className={`p-1.5 flex-shrink-0 flex items-center justify-center rounded-md transition-colors ${
+              isLocked ? 'text-amber-600 bg-amber-200/60' : 'text-slate-300 hover:text-slate-500 hover:bg-slate-100'
+            }`}
+          >
+            {isLocked ? <LockIcon /> : <UnlockIcon />}
+          </button>
+
+          <div className="flex flex-wrap w-[76px] gap-1 justify-end flex-shrink-0">
+            {SEAT_COLORS.map(c => (
+              <button
+                key={c.id}
+                onClick={() => onColorChange(seatId, c.id)}
+                disabled={!isOccupied}
+                className={`w-3.5 h-3.5 rounded-full border border-black/10 transition-all ${c.bg} ${
+                  passenger?.color === c.id 
+                    ? 'ring-2 ring-offset-1 ring-slate-400 scale-110' 
+                    : 'opacity-40 hover:opacity-100'
+                } disabled:opacity-20 disabled:cursor-not-allowed`}
+                title={c.label}
+              />
+            ))}
+          </div>
+        </div>
+      );
+    };
+
+    function App() {
+      const [user, setUser] = useState(null);
+      const [isDbEnabled, setIsDbEnabled] = useState(false);
+      const [busType, setBusType] = useState(45);
+      const [passengers, setPassengers] = useState({});
+      
+      const [editingSeat, setEditingSeat] = useState(null);
+      const [editName, setEditName] = useState('');
+      const [editColor, setEditColor] = useState('blue');
+      const [editLocked, setEditLocked] = useState(false);
+      
+      const [showResetConfirm, setShowResetConfirm] = useState(false);
+      const [showRandomModal, setShowRandomModal] = useState(false);
+      const [randomNames, setRandomNames] = useState('');
+
+      const [loginId, setLoginId] = useState('');
+      const [loginPw, setLoginPw] = useState('');
+      const [activeRoomId, setActiveRoomId] = useState('school-bus-default-room');
+
+      const inputRef = useRef(null);
+      const [toastMsg, setToastMsg] = useState(null);
+
+      // Firebase 연동 설정
+      useEffect(() => {
+        if (!IS_DB_CONFIGURED) {
+          setIsDbEnabled(false);
+          return;
+        }
+
+        const initAuth = async () => {
+          try {
+            await signInAnonymously(auth);
+          } catch(e) {
+            console.error("인증 실패:", e);
+            setIsDbEnabled(false);
+          }
+        };
+        
+        initAuth();
+        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+          setUser(currentUser);
+          if (currentUser) setIsDbEnabled(true);
+        });
+        
+        return () => unsubscribe();
+      }, []);
+
+      // 데이터 로드
+      useEffect(() => {
+        if (isDbEnabled && user) {
+          const seatsRef = collection(db, 'bus_rooms', activeRoomId, 'seats');
+          const unsubSeats = onSnapshot(seatsRef, (snapshot) => {
+            const newPassengers = {};
+            snapshot.forEach(doc => {
+              newPassengers[doc.id] = doc.data();
+            });
+            setPassengers(newPassengers);
+          }, (err) => console.error(err));
+
+          const configRef = collection(db, 'bus_rooms', activeRoomId, 'config');
+          const unsubConfig = onSnapshot(configRef, (snapshot) => {
+            snapshot.forEach(doc => {
+              if (doc.id === 'main') setBusType(doc.data().type);
+            });
+          }, (err) => console.error(err));
+
+          return () => {
+            unsubSeats();
+            unsubConfig();
+          };
+        } else if (!isDbEnabled) {
+          const localData = localStorage.getItem('bus_app_v2_' + activeRoomId);
+          if (localData) {
+            try {
+              const parsed = JSON.parse(localData);
+              setPassengers(parsed.p || {});
+              setBusType(parsed.t || 45);
+            } catch(e) {
+              setPassengers({});
+              setBusType(45);
+            }
+          } else {
+            setPassengers({});
+            setBusType(45);
+          }
+        }
+      }, [user, isDbEnabled, activeRoomId]);
+
+      const saveSeatData = async (seatId, data) => {
+        if (!isDbEnabled) {
+          setPassengers(prev => {
+            const next = { ...prev, [seatId]: data };
+            localStorage.setItem('bus_app_v2_' + activeRoomId, JSON.stringify({ p: next, t: busType }));
+            return next;
+          });
+          return;
+        }
+        try {
+          const docRef = doc(db, 'bus_rooms', activeRoomId, 'seats', String(seatId));
+          await setDoc(docRef, data);
+        } catch (e) { console.error(e); }
+      };
+
+      const deleteSeatData = async (seatId) => {
+        if (!isDbEnabled) {
+          setPassengers(prev => {
+            const next = { ...prev };
+            delete next[seatId];
+            localStorage.setItem('bus_app_v2_' + activeRoomId, JSON.stringify({ p: next, t: busType }));
+            return next;
+          });
+          return;
+        }
+        try {
+          const docRef = doc(db, 'bus_rooms', activeRoomId, 'seats', String(seatId));
+          await deleteDoc(docRef);
+        } catch (e) { console.error(e); }
+      };
+
+      const saveBusType = async (type) => {
+        if (!isDbEnabled) {
+          setBusType(type);
+          localStorage.setItem('bus_app_v2_' + activeRoomId, JSON.stringify({ p: passengers, t: type }));
+          return;
+        }
+        try {
+          const docRef = doc(db, 'bus_rooms', activeRoomId, 'config', 'main');
+          await setDoc(docRef, { type });
+        } catch (e) { console.error(e); }
+      };
+
+      const handleLoginRoom = () => {
+        if (!loginId.trim()) {
+          setToastMsg('접속할 아이디를 입력해주세요.');
+          setTimeout(() => setToastMsg(null), 3000);
+          return;
+        }
+        const newRoomId = `${loginId.trim()}_${loginPw.trim()}`;
+        setActiveRoomId(newRoomId);
+        setToastMsg(`[${loginId.trim()}] 배치도를 불러왔습니다.`);
+        setTimeout(() => setToastMsg(null), 3000);
+      };
+
+      const handleTypeChange = (e) => {
+        const newType = parseInt(e.target.value);
+        saveBusType(newType);
+        Object.keys(passengers).forEach(key => {
+          if (parseInt(key) > newType) deleteSeatData(key);
+        });
+      };
+
+      const executeResetAll = () => {
+        if (!isDbEnabled) {
+          setPassengers({});
+          localStorage.setItem('bus_app_v2_' + activeRoomId, JSON.stringify({ p: {}, t: busType }));
+        } else {
+          Object.keys(passengers).forEach(key => deleteSeatData(key));
+        }
+        setShowResetConfirm(false);
+      };
+
+      // 랜덤 배치 로직
+      const executeRandomAssign = async () => {
+        const names = randomNames.split('\n').map(n => n.trim()).filter(n => n);
+        if (names.length === 0) return;
+
+        const seatIds = Array.from({length: busType}, (_, i) => String(i+1));
+        // 고정(isLocked)되지 않은 좌석만 추출
+        const unlockedSeats = seatIds.filter(id => !(passengers[id]?.isLocked));
+        
+        // 입력받은 학생 명단 셔플
+        const shuffled = [...names].sort(() => Math.random() - 0.5);
+
+        if (!isDbEnabled) {
+          const next = { ...passengers };
+          // 기존 고정 안 된 좌석 비우기
+          unlockedSeats.forEach(id => delete next[id]);
+          // 새롭게 채우기
+          unlockedSeats.forEach((id, idx) => {
+            if (idx < shuffled.length) {
+              next[id] = { name: shuffled[idx], color: 'blue', isLocked: false };
+            }
+          });
+          setPassengers(next);
+          localStorage.setItem('bus_app_v2_' + activeRoomId, JSON.stringify({ p: next, t: busType }));
+          setToastMsg(`총 ${Math.min(shuffled.length, unlockedSeats.length)}명 배치가 완료되었습니다.`);
+        } else {
+          setToastMsg('랜덤 배치 중입니다...');
+          const promises = unlockedSeats.map((id, idx) => {
+            if (idx < shuffled.length) {
+              return saveSeatData(id, { name: shuffled[idx], color: 'blue', isLocked: false });
+            } else {
+              return deleteSeatData(id);
+            }
+          });
+          await Promise.all(promises);
+          setToastMsg(`총 ${Math.min(shuffled.length, unlockedSeats.length)}명 배치가 완료되었습니다.`);
+        }
+        
+        setTimeout(() => setToastMsg(null), 3000);
+        setShowRandomModal(false);
+        setRandomNames('');
+      };
+
+      const handleSeatClick = (seatId) => {
+        setEditingSeat(seatId);
+        const existing = passengers[seatId];
+        setEditName(existing?.name || '');
+        setEditColor(existing?.color || 'blue');
+        setEditLocked(existing?.isLocked || false);
+        setTimeout(() => inputRef.current?.focus(), 50);
+      };
+
+      const handleModalSave = () => {
+        if (editName.trim() === '' && !editLocked) {
+          deleteSeatData(editingSeat);
+        } else {
+          saveSeatData(editingSeat, { name: editName.trim(), color: editColor, isLocked: editLocked });
+        }
+        setEditingSeat(null);
+      };
+
+      const handleModalKeyDown = (e) => {
+        if (e.key === 'Enter') handleModalSave();
+        if (e.key === 'Escape') setEditingSeat(null);
+      };
+
+      const handleTableColorChange = (seatId, newColor) => {
+        const existing = passengers[seatId];
+        if (existing) {
+          saveSeatData(seatId, { ...existing, color: newColor });
+        }
+      };
+
+      const handlePrint = () => {
+        window.print();
+      };
+
+      const handleDownloadImage = async () => {
+        const printArea = document.getElementById('printable-area');
+        if (!printArea) return;
+        try {
+          setToastMsg('이미지를 생성 중입니다...');
+          const canvas = await window.html2canvas(printArea, { 
+            scale: 2, 
+            backgroundColor: '#ffffff',
+            useCORS: true 
+          });
+          const link = document.createElement('a');
+          link.download = `버스_좌석배치도_${busType}인승.png`;
+          link.href = canvas.toDataURL('image/png');
+          link.click();
+          setToastMsg('이미지 저장이 완료되었습니다.');
+          setTimeout(() => setToastMsg(null), 3000);
+        } catch(e) {
+          console.error("이미지 저장 에러:", e);
+          setToastMsg('이미지 생성에 실패했습니다.');
+          setTimeout(() => setToastMsg(null), 3000);
+        }
+      };
+
+      const generateLayout = (type) => {
+        const normalRows = type >= 44 ? 10 : 9;
+        const backRowSeats = (type === 45 || type === 41) ? 5 : 4;
+        let layout = [];
+        let seatNum = 1;
+        for (let i = 0; i < normalRows; i++) {
+          layout.push([{ id: seatNum++ }, { id: seatNum++ }, null, { id: seatNum++ }, { id: seatNum++ }]);
+        }
+        if (backRowSeats === 5) {
+          layout.push([{ id: seatNum++ }, { id: seatNum++ }, { id: seatNum++ }, { id: seatNum++ }, { id: seatNum++ }]);
+        } else {
+          layout.push([{ id: seatNum++ }, { id: seatNum++ }, null, { id: seatNum++ }, { id: seatNum++ }]);
+        }
+        return layout;
+      };
+
+      const layout = generateLayout(busType);
+      
+      // 이름이 입력된 사람만 배정된 것으로 카운트
+      const assignedCount = Object.values(passengers).filter(p => p.name && p.name.trim() !== '').length;
+
+      return (
+        <div className="min-h-screen p-4 sm:p-6 relative">
+          
+          {!IS_DB_CONFIGURED && (
+            <div className="max-w-6xl mx-auto mb-4 bg-amber-50 text-amber-800 p-4 rounded-xl border border-amber-200 text-sm font-medium no-print">
+              💡 <b>오프라인(로컬) 모드:</b> 현재 작성한 내용은 브라우저에 저장됩니다. 학급별로 아이디를 다르게 입력하여 개별 저장/불러오기가 가능합니다.
+            </div>
+          )}
+
+          {/* 상단 컨트롤 영역 */}
+          <div className="max-w-6xl mx-auto mb-5 bg-white p-5 rounded-2xl shadow-sm border border-slate-200 no-print">
+            <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+              <div>
+                <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
+                  버스 좌석 배치도
+                  {isDbEnabled && <span className="flex h-3 w-3 relative ml-2" title="실시간 동기화 중"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span></span>}
+                </h1>
+                <p className="text-slate-500 mt-1">좌석을 클릭하거나 우측 표에 직접 입력하세요.</p>
+              </div>
+              
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="bg-slate-100 p-1.5 rounded-lg border border-slate-200 flex items-center">
+                  <select 
+                    value={busType} 
+                    onChange={handleTypeChange}
+                    className="bg-transparent border-none text-slate-800 font-semibold focus:ring-0 cursor-pointer pl-2 pr-6 outline-none"
+                  >
+                    <option value={45}>45인승 대형버스</option>
+                    <option value={44}>44인승 대형버스</option>
+                    <option value={41}>41인승 대형버스</option>
+                    <option value={40}>40인승 대형버스</option>
+                  </select>
+                </div>
+                
+                <button onClick={() => setShowRandomModal(true)} className="flex items-center gap-2 px-4 py-2 bg-purple-50 text-purple-600 rounded-lg border border-purple-200 hover:bg-purple-100 transition-colors font-medium shadow-sm">
+                  <ShuffleIcon /><span className="hidden sm:inline">랜덤 배치</span>
+                </button>
+                <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors font-medium shadow-sm">
+                  <PrintIcon /><span>인쇄</span>
+                </button>
+                <button onClick={handleDownloadImage} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-200 transition-colors font-medium shadow-sm">
+                  <DownloadIcon /><span>이미지</span>
+                </button>
+                <button onClick={() => setShowResetConfirm(true)} className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-lg border border-red-200 hover:bg-red-100 transition-colors font-medium">
+                  <TrashIcon /><span className="hidden sm:inline">전체 초기화</span>
+                </button>
+              </div>
+            </div>
+            
+            <div className="mt-4 flex flex-wrap gap-4 text-sm font-medium border-t border-slate-100 pt-4">
+              <div className="px-3 py-1 bg-slate-100 rounded-full text-slate-600">총 좌석: {busType}석</div>
+              <div className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full">배정 완료: {assignedCount}명</div>
+              <div className="px-3 py-1 bg-green-50 text-green-700 rounded-full">잔여 좌석: {busType - assignedCount}석</div>
+            </div>
+          </div>
+
+          <div className="max-w-6xl mx-auto flex flex-col lg:flex-row gap-6 items-start">
+            
+            {/* 왼쪽: 버스 레이아웃 */}
+            <div id="printable-area" className="flex-1 w-full max-w-2xl mx-auto print:max-w-full">
+              <div className="bus-container bg-white border-[6px] border-slate-800 rounded-[2.5rem] p-5 sm:p-6 shadow-xl relative">
+                
+                {/* 전면부 */}
+                <div className="grid grid-cols-5 gap-3 print:gap-2 mb-5 print:mb-4 pb-4 print:pb-2 border-b-2 border-slate-100">
+                  <div className="col-span-2 flex items-center justify-center p-2.5 sm:p-3 print:p-2.5 bg-slate-100 rounded-xl border border-slate-200 text-slate-700">
+                    <SteeringWheelIcon />
+                    <span className="ml-2 font-bold text-sm sm:text-base print:text-xs">운전 기사님</span>
+                  </div>
+                  <div className="col-span-1 flex justify-center items-end pb-1.5">
+                    <span className="text-slate-300 text-[9px] sm:text-xs font-bold tracking-widest">FRONT</span>
+                  </div>
+                  <div className="col-span-2 flex items-center justify-center p-2.5 sm:p-3 print:p-2.5 bg-amber-50 rounded-xl border border-dashed border-amber-300 text-amber-700 relative overflow-hidden">
+                    <DoorIcon />
+                    <span className="ml-2 font-bold text-sm sm:text-base print:text-xs">출입문</span>
+                  </div>
+                </div>
+
+                {/* 좌석 그리드 */}
+                <div className="flex flex-col gap-2.5 print:gap-2">
+                  {layout.map((row, rowIndex) => (
+                    <div key={`row-${rowIndex}`} className="grid grid-cols-5 gap-2 sm:gap-2.5 print:gap-2">
+                      {row.map((cell, colIndex) => {
+                        if (cell === null) return <div key={`aisle-${rowIndex}-${colIndex}`} className="flex items-center justify-center text-slate-200 font-bold text-[9px] sm:text-xs tracking-widest">{rowIndex % 4 === 1 && "통 로"}</div>;
+
+                        const seatId = cell.id;
+                        const passenger = passengers[seatId];
+                        const isOccupied = !!passenger?.name;
+                        const isLocked = !!passenger?.isLocked;
+                        
+                        let colorTheme = null;
+                        if (isOccupied) {
+                          colorTheme = SEAT_COLORS.find(c => c.id === passenger.color) || SEAT_COLORS[0];
+                        } else if (isLocked) {
+                          colorTheme = { bg: 'bg-amber-50/50', border: 'border-amber-300', text: 'text-amber-700' };
+                        }
+
+                        return (
+                          <div
+                            key={`seat-${seatId}`}
+                            onClick={() => handleSeatClick(seatId)}
+                            className={`relative h-14 sm:h-16 print:h-[64px] rounded-t-xl rounded-b bg-white border flex flex-col items-center justify-center cursor-pointer transition-all duration-150 ${
+                              isOccupied || isLocked 
+                                ? `${colorTheme.bg} ${colorTheme.border} shadow-sm -webkit-print-color-adjust: exact;` 
+                                : 'border-slate-200 hover:border-blue-300 hover:bg-blue-50'
+                            }`}
+                          >
+                            {/* 고정(잠금) 아이콘 */}
+                            {isLocked && (
+                               <div className={`absolute top-1 right-1 sm:top-1.5 sm:right-1.5 opacity-70 print:opacity-100 ${isOccupied ? colorTheme.text : 'text-amber-500'}`}>
+                                 <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M17 11V7A5 5 0 0 0 7 7v4H5v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V11h-2zm-5 6a2 2 0 1 1 2-2 2 2 0 0 1-2 2zM9 11V7a3 3 0 0 1 6 0v4H9z"/></svg>
+                               </div>
+                            )}
+
+                            {isOccupied ? (
+                              <>
+                                <span className={`absolute top-0.5 left-1 print:top-1 print:left-1.5 text-[8px] sm:text-[9px] print:text-[8px] font-black opacity-50 ${colorTheme.text}`}>{seatId}</span>
+                                <span className={`font-bold text-xs sm:text-sm print:text-[14px] overflow-hidden whitespace-nowrap text-ellipsis w-full text-center px-1 leading-tight mt-1 print:mt-1 ${colorTheme.text}`}>{passenger.name}</span>
+                              </>
+                            ) : (
+                              <span className={`font-bold text-base sm:text-lg print:text-sm ${isLocked ? 'text-amber-400' : 'text-slate-300'}`}>{seatId}</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-4 print:mt-3 text-center text-slate-300 text-[9px] sm:text-xs font-bold tracking-widest">BACK</div>
+              </div>
+            </div>
+
+            {/* 오른쪽: 사이드바 패널 */}
+            <div className="w-full lg:w-80 bg-white rounded-2xl shadow-md border border-slate-200 flex flex-col overflow-hidden no-print shrink-0 lg:sticky lg:top-6" style={{ minWidth: '320px', height: 'auto', maxHeight: '800px' }}>
+              <div className="bg-slate-800 p-4 shrink-0">
+                <div className="flex justify-between items-center mb-2 gap-2">
+                  <span className="text-white font-bold text-xs whitespace-nowrap shrink-0">학급 접속</span>
+                  {activeRoomId !== 'school-bus-default-room' && (
+                     <span className="text-[11px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30 truncate max-w-[140px]" title={loginId}>
+                       접속: {loginId}
+                     </span>
+                  )}
+                </div>
+                <div className="flex gap-2 mb-2 w-full">
+                  <input 
+                    type="text" 
+                    value={loginId} 
+                    onChange={e => setLoginId(e.target.value)} 
+                    placeholder="아이디" 
+                    className="flex-[3] min-w-0 px-2.5 py-1.5 text-xs rounded bg-slate-700 text-white placeholder-slate-400 border border-slate-600 focus:outline-none focus:border-blue-400" 
+                  />
+                  <input 
+                    type="password" 
+                    value={loginPw} 
+                    onChange={e => setLoginPw(e.target.value)} 
+                    placeholder="비번" 
+                    className="flex-[2] min-w-0 px-2.5 py-1.5 text-xs rounded bg-slate-700 text-white placeholder-slate-400 border border-slate-600 focus:outline-none focus:border-blue-400" 
+                    onKeyDown={(e) => e.key === 'Enter' && handleLoginRoom()} 
+                  />
+                </div>
+                <button 
+                  onClick={handleLoginRoom} 
+                  className="w-full bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-1.5 px-2 rounded transition-colors shadow-sm"
+                >
+                  해당 아이디로 접속 / 이어하기
+                </button>
+              </div>
+
+              <div className="p-3 bg-slate-700 text-white font-bold flex justify-between items-center text-xs shrink-0">
+                <span>좌석 목록 (빠른 입력)</span>
+                <span className="text-[11px] bg-slate-600 px-2 py-0.5 rounded-md">{busType}석</span>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 bg-slate-50 min-h-[300px]">
+                {Array.from({ length: busType }, (_, i) => i + 1).map(seatId => (
+                  <SeatRow 
+                    key={`list-${seatId}`}
+                    seatId={seatId}
+                    passenger={passengers[seatId]}
+                    onUpdate={saveSeatData}
+                    onDelete={deleteSeatData}
+                    onColorChange={handleTableColorChange}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* 랜덤 배치 모달 */}
+          {showRandomModal && (
+            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4 no-print" onClick={() => setShowRandomModal(false)}>
+              <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="p-2 bg-purple-100 text-purple-600 rounded-lg"><ShuffleIcon /></div>
+                  <h3 className="text-xl font-bold text-slate-800">학생 랜덤 배치</h3>
+                </div>
+                <p className="text-sm text-slate-500 mb-4 font-medium leading-relaxed">
+                  배치할 학생 명단(번호+이름)을 줄바꿈으로 입력하세요.<br/>
+                  <span className="text-amber-600 font-bold bg-amber-50 px-1 rounded">※ 고정(🔒)된 좌석은 유지되며, 나머지 빈자리에 무작위로 배치됩니다.</span>
+                </p>
+                <textarea
+                  value={randomNames}
+                  onChange={e => setRandomNames(e.target.value)}
+                  className="w-full h-48 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm mb-5 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:bg-white transition-colors resize-none"
+                  placeholder="예시:&#13;&#10;1 홍길동&#13;&#10;2 김철수&#13;&#10;3 이영희&#13;&#10;(한 줄에 한 명씩 복사해서 붙여넣으세요)"
+                />
+                <div className="flex gap-2">
+                  <button onClick={() => setShowRandomModal(false)} className="flex-1 py-2.5 bg-slate-100 text-slate-700 font-bold rounded-lg hover:bg-slate-200 text-sm transition-colors">취소</button>
+                  <button onClick={executeRandomAssign} className="flex-[2] py-2.5 bg-purple-600 text-white font-bold rounded-lg hover:bg-purple-700 text-sm transition-colors shadow-sm">랜덤 배치 실행</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 좌석 수정 모달 */}
+          {editingSeat && (
+            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[50] p-4 no-print" onClick={() => setEditingSeat(null)}>
+              <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xl font-bold text-slate-800"><span className="text-blue-600">{editingSeat}</span>번 좌석</h3>
+                  <button onClick={() => setEditingSeat(null)} className="text-slate-400 hover:text-slate-700 bg-slate-100 rounded-full p-1.5">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+                
+                <div className="mb-4">
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">탑승자 번호 / 이름</label>
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    onKeyDown={handleModalKeyDown}
+                    placeholder="예: 14 김철수"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-medium text-base transition-colors"
+                  />
+                </div>
+
+                <div className="mb-4">
+                  <label className="flex items-center gap-2 cursor-pointer p-3 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
+                    <input type="checkbox" checked={editLocked} onChange={e => setEditLocked(e.target.checked)} className="w-4 h-4 text-amber-500 rounded border-slate-300 focus:ring-amber-500" />
+                    <span className="text-sm font-bold text-slate-700 flex items-center gap-1">
+                      <LockIcon /> 이 좌석을 지정석으로 고정
+                    </span>
+                  </label>
+                  <p className="text-[11px] text-slate-500 mt-1 ml-1">고정된 좌석은 '랜덤 배치'를 돌려도 변경되지 않습니다.</p>
+                </div>
+
+                <div className="mb-6">
+                  <label className="block text-xs font-semibold text-slate-600 mb-2">그룹 색상 지정</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {SEAT_COLORS.map(color => (
+                      <button
+                        key={color.id}
+                        onClick={() => setEditColor(color.id)}
+                        className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-transform ${color.bg} ${color.border} ${editColor === color.id ? 'scale-110 ring-2 ring-offset-2 ring-slate-400' : 'opacity-70 hover:opacity-100'}`}
+                      >
+                        {editColor === color.id && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className={color.text}><polyline points="20 6 9 17 4 12"></polyline></svg>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <button onClick={() => { deleteSeatData(editingSeat); setEditingSeat(null); }} className="flex-1 py-2 bg-slate-100 text-slate-700 font-bold rounded-lg hover:bg-slate-200 text-sm transition-colors">비우기</button>
+                  <button onClick={handleModalSave} className="flex-[2] py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 text-sm transition-colors shadow-sm">저장하기</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 초기화 모달 */}
+          {showResetConfirm && (
+            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4 no-print" onClick={() => setShowResetConfirm(false)}>
+              <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-center mb-3 text-red-500">
+                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                </div>
+                <h3 className="text-lg font-bold text-slate-800 text-center mb-1">전체 초기화</h3>
+                <p className="text-slate-600 text-xs text-center mb-4">
+                  고정된 자리를 포함한 모든 좌석 배치를 초기화하시겠습니까?<br/>
+                  {isDbEnabled && <span className="text-red-500 font-semibold">※ 다른 학생들의 화면에서도 즉시 삭제됩니다.</span>}
+                </p>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowResetConfirm(false)} className="flex-1 py-2 bg-slate-100 text-slate-700 font-bold rounded-lg hover:bg-slate-200 text-xs transition-colors">취소</button>
+                  <button onClick={executeResetAll} className="flex-1 py-2 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 text-xs transition-colors">초기화 진행</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 토스트 */}
+          {toastMsg && (
+            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-5 py-2.5 rounded-full shadow-lg z-[70] text-sm font-medium flex items-center gap-2 animate-bounce no-print">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              {toastMsg}
+            </div>
+          )}
+
+        </div>
+      );
+    }
+
+    const root = createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
