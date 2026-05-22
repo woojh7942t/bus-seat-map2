@@ -5,10 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>실시간 버스 좌석 배치도</title>
   
+  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   
+  <!-- 이미지 저장 라이브러리 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   
+  <!-- 웹 폰트 추가 (html2canvas 글씨 깨짐/잘림 방지용) -->
+  <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  
+  <!-- Import Map for React & Firebase -->
   <script type="importmap">
     {
       "imports": {
@@ -21,9 +27,15 @@
     }
   </script>
 
+  <!-- Babel for JSX compilation in browser -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
   <style>
+    /* 전체 폰트 고정 */
+    body {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif !important;
+    }
+
     @media print {
       body {
         background-color: white !important;
@@ -368,7 +380,12 @@
         if (!printArea) return;
         try {
           setToastMsg('이미지를 생성 중입니다...');
-          const canvas = await window.html2canvas(printArea, { scale: 2, backgroundColor: '#ffffff' });
+          // 스케일 및 배경 명시적 할당으로 폰트 렌더링 안정성 확보
+          const canvas = await window.html2canvas(printArea, { 
+            scale: 2, 
+            backgroundColor: '#ffffff',
+            useCORS: true 
+          });
           const link = document.createElement('a');
           link.download = `버스_좌석배치도_${busType}인승.png`;
           link.href = canvas.toDataURL('image/png');
@@ -475,7 +492,7 @@
                   </div>
                 </div>
 
-                {/* 좌석 그리드 (print:h-[64px]로 세로 칸을 넓혔습니다) */}
+                {/* 좌석 그리드 */}
                 <div className="flex flex-col gap-2.5 print:gap-2">
                   {layout.map((row, rowIndex) => (
                     <div key={`row-${rowIndex}`} className="grid grid-cols-5 gap-2 sm:gap-2.5 print:gap-2">
@@ -496,7 +513,8 @@
                             {isOccupied ? (
                               <>
                                 <span className={`absolute top-0.5 left-1 print:top-1 print:left-1.5 text-[8px] sm:text-[9px] print:text-[8px] font-black opacity-50 ${colorTheme.text}`}>{seatId}</span>
-                                <span className={`font-bold text-xs sm:text-sm print:text-[14px] truncate w-full text-center px-1 leading-none mt-1 print:mt-2.5 ${colorTheme.text}`}>{passenger.name}</span>
+                                {/* 수정된 부분: leading-none 제거, 텍스트 넘침 숨김 처리 변경 */}
+                                <span className={`font-bold text-xs sm:text-sm print:text-[14px] overflow-hidden whitespace-nowrap text-ellipsis w-full text-center px-1 leading-tight mt-1 print:mt-1 ${colorTheme.text}`}>{passenger.name}</span>
                               </>
                             ) : (
                               <span className="font-bold text-slate-300 text-base sm:text-lg print:text-sm">{seatId}</span>
@@ -511,31 +529,31 @@
               </div>
             </div>
 
-            {/* 오른쪽: 사이드바 패널 */}
-            <div className="w-full lg:w-80 bg-white rounded-2xl shadow-md border border-slate-200 flex flex-col overflow-hidden no-print h-auto lg:h-[720px] shrink-0">
+            {/* 오른쪽: 사이드바 패널 (가로 사이즈 초과 방지) */}
+            <div className="w-full lg:w-80 bg-white rounded-2xl shadow-md border border-slate-200 flex flex-col overflow-hidden no-print shrink-0 lg:sticky lg:top-6" style={{ minWidth: '320px', height: 'auto', maxHeight: '800px' }}>
               <div className="bg-slate-800 p-4 shrink-0">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-white font-bold text-xs">저장 및 불러오기 (학급 접속)</span>
+                <div className="flex justify-between items-center mb-2 gap-2">
+                  <span className="text-white font-bold text-xs whitespace-nowrap shrink-0">학급 접속</span>
                   {activeRoomId !== 'school-bus-default-room' && (
-                     <span className="text-[11px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">
+                     <span className="text-[11px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30 truncate max-w-[140px]" title={loginId}>
                        접속: {loginId}
                      </span>
                   )}
                 </div>
-                <div className="flex gap-2 mb-2">
+                <div className="flex gap-2 mb-2 w-full">
                   <input 
                     type="text" 
                     value={loginId} 
                     onChange={e => setLoginId(e.target.value)} 
                     placeholder="아이디" 
-                    className="flex-[3] px-2.5 py-1.5 text-xs rounded bg-slate-700 text-white placeholder-slate-400 border border-slate-600 focus:outline-none" 
+                    className="flex-[3] min-w-0 px-2.5 py-1.5 text-xs rounded bg-slate-700 text-white placeholder-slate-400 border border-slate-600 focus:outline-none focus:border-blue-400" 
                   />
                   <input 
                     type="password" 
                     value={loginPw} 
                     onChange={e => setLoginPw(e.target.value)} 
                     placeholder="비번" 
-                    className="flex-[2] px-2.5 py-1.5 text-xs rounded bg-slate-700 text-white placeholder-slate-400 border border-slate-600 focus:outline-none" 
+                    className="flex-[2] min-w-0 px-2.5 py-1.5 text-xs rounded bg-slate-700 text-white placeholder-slate-400 border border-slate-600 focus:outline-none focus:border-blue-400" 
                     onKeyDown={(e) => e.key === 'Enter' && handleLoginRoom()} 
                   />
                 </div>
@@ -552,7 +570,7 @@
                 <span className="text-[11px] bg-slate-600 px-2 py-0.5 rounded-md">{busType}석</span>
               </div>
               
-              <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 bg-slate-50">
+              <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 bg-slate-50 min-h-[300px]">
                 {Array.from({ length: busType }, (_, i) => i + 1).map(seatId => (
                   <SeatRow 
                     key={`list-${seatId}`}
