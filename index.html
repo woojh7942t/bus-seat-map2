@@ -56,7 +56,7 @@
       /* A4 세로 출력 맞춤 여백 조절 */
       @page { 
         size: A4 portrait; 
-        margin: 8mm 10mm 8mm 10mm; 
+        margin: 6mm 10mm 6mm 10mm; 
       }
     }
   </style>
@@ -462,20 +462,20 @@
                 
                 {/* 전면부 */}
                 <div className="grid grid-cols-5 gap-3 print:gap-2 mb-5 print:mb-4 pb-4 print:pb-2 border-b-2 border-slate-100">
-                  <div className="col-span-2 flex items-center justify-center p-2.5 sm:p-3 print:p-2 bg-slate-100 rounded-xl border border-slate-200 text-slate-700">
+                  <div className="col-span-2 flex items-center justify-center p-2.5 sm:p-3 print:p-2.5 bg-slate-100 rounded-xl border border-slate-200 text-slate-700">
                     <SteeringWheelIcon />
                     <span className="ml-2 font-bold text-sm sm:text-base print:text-xs">운전 기사님</span>
                   </div>
                   <div className="col-span-1 flex justify-center items-end pb-1.5">
                     <span className="text-slate-300 text-[9px] sm:text-xs font-bold tracking-widest">FRONT</span>
                   </div>
-                  <div className="col-span-2 flex items-center justify-center p-2.5 sm:p-3 print:p-2 bg-amber-50 rounded-xl border border-dashed border-amber-300 text-amber-700 relative overflow-hidden">
+                  <div className="col-span-2 flex items-center justify-center p-2.5 sm:p-3 print:p-2.5 bg-amber-50 rounded-xl border border-dashed border-amber-300 text-amber-700 relative overflow-hidden">
                     <DoorIcon />
                     <span className="ml-2 font-bold text-sm sm:text-base print:text-xs">출입문</span>
                   </div>
                 </div>
 
-                {/* 좌석 그리드 (요청하신 대로 print:h-[58px]로 조절하여 칸을 늘렸습니다) */}
+                {/* 좌석 그리드 (print:h-[64px]로 세로 칸을 넓혔습니다) */}
                 <div className="flex flex-col gap-2.5 print:gap-2">
                   {layout.map((row, rowIndex) => (
                     <div key={`row-${rowIndex}`} className="grid grid-cols-5 gap-2 sm:gap-2.5 print:gap-2">
@@ -491,12 +491,12 @@
                           <div
                             key={`seat-${seatId}`}
                             onClick={() => handleSeatClick(seatId)}
-                            className={`relative h-14 sm:h-16 print:h-[58px] rounded-t-xl rounded-b bg-white border flex flex-col items-center justify-center cursor-pointer transition-all duration-150 ${isOccupied ? `${colorTheme.bg} ${colorTheme.border} shadow-sm -webkit-print-color-adjust: exact;` : 'border-slate-200 hover:border-blue-300 hover:bg-blue-50'}`}
+                            className={`relative h-14 sm:h-16 print:h-[64px] rounded-t-xl rounded-b bg-white border flex flex-col items-center justify-center cursor-pointer transition-all duration-150 ${isOccupied ? `${colorTheme.bg} ${colorTheme.border} shadow-sm -webkit-print-color-adjust: exact;` : 'border-slate-200 hover:border-blue-300 hover:bg-blue-50'}`}
                           >
                             {isOccupied ? (
                               <>
                                 <span className={`absolute top-0.5 left-1 print:top-1 print:left-1.5 text-[8px] sm:text-[9px] print:text-[8px] font-black opacity-50 ${colorTheme.text}`}>{seatId}</span>
-                                <span className={`font-bold text-xs sm:text-sm print:text-[14px] truncate w-full text-center px-1 leading-none mt-1 print:mt-2 ${colorTheme.text}`}>{passenger.name}</span>
+                                <span className={`font-bold text-xs sm:text-sm print:text-[14px] truncate w-full text-center px-1 leading-none mt-1 print:mt-2.5 ${colorTheme.text}`}>{passenger.name}</span>
                               </>
                             ) : (
                               <span className="font-bold text-slate-300 text-base sm:text-lg print:text-sm">{seatId}</span>
