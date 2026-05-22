@@ -498,6 +498,12 @@
         if (!printArea) return;
         try {
           setToastMsg('이미지를 생성 중입니다...');
+          
+          // [수정] 폰트가 완전히 로드될 때까지 대기
+          await document.fonts.ready;
+          // UI 렌더링 지연시간 확보
+          await new Promise(resolve => setTimeout(resolve, 150));
+
           const canvas = await window.html2canvas(printArea, { 
             scale: 2, 
             backgroundColor: '#ffffff',
@@ -659,10 +665,12 @@
                             {isOccupied ? (
                               <>
                                 <span className={`absolute top-0.5 left-1 print:top-1 print:left-1.5 text-[8px] sm:text-[9px] print:text-[8px] font-black opacity-50 ${colorTheme.text}`}>{seatId}</span>
-                                <span className={`font-bold text-xs sm:text-sm print:text-[14px] overflow-hidden whitespace-nowrap text-ellipsis w-full text-center px-1 leading-tight mt-1 print:mt-1 ${colorTheme.text}`}>{passenger.name}</span>
+                                {/* [수정] 텍스트 잘림 방지: leading-tight 제거, leading-normal 및 하단 여백(pb-[2px]) 추가 */}
+                                <span className={`font-bold text-xs sm:text-sm print:text-[14px] overflow-hidden whitespace-nowrap text-ellipsis w-full text-center px-1 leading-normal pb-[2px] mt-1 print:mt-1 ${colorTheme.text}`}>{passenger.name}</span>
                               </>
                             ) : (
-                              <span className={`font-bold text-base sm:text-lg print:text-sm ${isLocked ? 'text-amber-400' : 'text-slate-300'}`}>{seatId}</span>
+                              {/* [수정] 텍스트 잘림 방지: 하단 여백 추가 */}
+                              <span className={`font-bold text-base sm:text-lg print:text-sm pb-[2px] ${isLocked ? 'text-amber-400' : 'text-slate-300'}`}>{seatId}</span>
                             )}
                           </div>
                         );
