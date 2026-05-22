@@ -500,12 +500,13 @@
           setToastMsg('이미지를 생성 중입니다...');
           
           await document.fonts.ready;
-          await new Promise(resolve => setTimeout(resolve, 150));
+          await new Promise(resolve => setTimeout(resolve, 200));
 
           const canvas = await window.html2canvas(printArea, { 
             scale: 2, 
             backgroundColor: '#ffffff',
-            useCORS: true 
+            useCORS: true,
+            logging: false
           });
           const link = document.createElement('a');
           link.download = `버스_좌석배치도_${busType}인승.png`;
@@ -605,20 +606,20 @@
 
           <div className="max-w-6xl mx-auto flex flex-col lg:flex-row gap-6 items-start">
             
-            {/* 왼쪽: 버스 레이아웃 */}
-            <div id="printable-area" className="flex-1 w-full max-w-2xl mx-auto print:max-w-full">
-              <div className="bus-container bg-white border-[6px] border-slate-800 rounded-[2.5rem] p-5 sm:p-6 shadow-xl relative">
+            {/* 왼쪽: 버스 레이아웃 (이 부분을 캡처 기준점으로 변경) */}
+            <div className="flex-1 w-full max-w-2xl mx-auto print:max-w-full">
+              <div id="printable-area" className="bus-container bg-white border-[6px] border-slate-800 rounded-[2.5rem] p-4 sm:p-5 shadow-xl relative w-full max-w-2xl mx-auto">
                 
-                {/* 전면부 */}
-                <div className="grid grid-cols-5 gap-3 print:gap-2 mb-5 print:mb-4 pb-4 print:pb-2 border-b-2 border-slate-100">
-                  <div className="col-span-2 flex items-center justify-center p-2.5 sm:p-3 print:p-2.5 bg-slate-100 rounded-xl border border-slate-200 text-slate-700">
+                {/* 전면부 (여백 축소) */}
+                <div className="grid grid-cols-5 gap-3 print:gap-2 mb-3 pb-3 border-b-2 border-slate-100">
+                  <div className="col-span-2 flex items-center justify-center p-2 sm:p-2.5 print:p-2.5 bg-slate-100 rounded-xl border border-slate-200 text-slate-700">
                     <SteeringWheelIcon />
                     <span className="ml-2 font-bold text-sm sm:text-base print:text-xs">운전 기사님</span>
                   </div>
                   <div className="col-span-1 flex justify-center items-end pb-1.5">
                     <span className="text-slate-300 text-[9px] sm:text-xs font-bold tracking-widest">FRONT</span>
                   </div>
-                  <div className="col-span-2 flex items-center justify-center p-2.5 sm:p-3 print:p-2.5 bg-amber-50 rounded-xl border border-dashed border-amber-300 text-amber-700 relative overflow-hidden">
+                  <div className="col-span-2 flex items-center justify-center p-2 sm:p-2.5 print:p-2.5 bg-amber-50 rounded-xl border border-dashed border-amber-300 text-amber-700 relative overflow-hidden">
                     <DoorIcon />
                     <span className="ml-2 font-bold text-sm sm:text-base print:text-xs">출입문</span>
                   </div>
@@ -663,10 +664,16 @@
                             {isOccupied ? (
                               <>
                                 <span className={`absolute top-0.5 left-1 print:top-1 print:left-1.5 text-[8px] sm:text-[9px] print:text-[8px] font-black opacity-50 ${colorTheme.text}`}>{seatId}</span>
-                                <span className={`font-bold text-xs sm:text-sm print:text-[14px] overflow-hidden whitespace-nowrap text-ellipsis w-full text-center px-1 leading-normal pb-[2px] mt-1 print:mt-1 ${colorTheme.text}`}>{passenger.name}</span>
+                                {/* 글자 잘림 방지: overflow-hidden 제거, 줄 바꿈 방지 스타일 명시, 하단 패딩 적용 */}
+                                <span 
+                                  className={`font-bold text-xs sm:text-sm print:text-[14px] w-full text-center px-1 pb-1 pt-0.5 leading-snug tracking-tight ${colorTheme.text}`}
+                                  style={{ whiteSpace: 'nowrap' }}
+                                >
+                                  {passenger.name}
+                                </span>
                               </>
                             ) : (
-                              <span className={`font-bold text-base sm:text-lg print:text-sm pb-[2px] ${isLocked ? 'text-amber-400' : 'text-slate-300'}`}>{seatId}</span>
+                              <span className={`font-bold text-base sm:text-lg print:text-sm ${isLocked ? 'text-amber-400' : 'text-slate-300'}`}>{seatId}</span>
                             )}
                           </div>
                         );
@@ -674,7 +681,8 @@
                     </div>
                   ))}
                 </div>
-                <div className="mt-4 print:mt-3 text-center text-slate-300 text-[9px] sm:text-xs font-bold tracking-widest">BACK</div>
+                {/* 후면부 여백 축소 */}
+                <div className="mt-2 text-center text-slate-300 text-[9px] sm:text-xs font-bold tracking-widest">BACK</div>
               </div>
             </div>
 
